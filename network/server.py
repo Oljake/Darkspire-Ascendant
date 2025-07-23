@@ -1,7 +1,6 @@
 import asyncio, socket, requests
 from network.config import PORT, HOST
 
-
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -13,13 +12,11 @@ def get_local_ip():
         s.close()
     return ip
 
-
 def get_public_ip():
     try:
         return requests.get("https://api.ipify.org", timeout=5).text
     except:
         return "Unavailable"
-
 
 def is_port_open(port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -29,7 +26,6 @@ def is_port_open(port):
         return False
     except OSError:
         return True
-
 
 class GameServer:
     def __init__(self):
@@ -41,6 +37,22 @@ class GameServer:
         self.host = None
         self.broadcast_task = None
         self.server = None
+        self.countdown_task = None
+
+    async def start_countdown(self):
+        # Send countdown messages
+        for i in range(3, 0, -1):
+            await self.broadcast(f"SERVER: Starting in {i}...")
+            await asyncio.sleep(1)
+        await self.broadcast("SERVER: Starting")
+        await asyncio.sleep(1)
+        # Send loading game signal
+        await self.broadcast("LOADING_GAME")
+        await asyncio.sleep(2)  # Simulate loading time
+        # Start the game
+        self.game_started = True
+        await self.broadcast("START_GAME")
+        await self.broadcast_positions()
 
     async def handle_client(self, reader, writer):
         if len(self.clients) >= 6 or self.game_started:
@@ -77,10 +89,10 @@ class GameServer:
                     status_str = "READY" if self.ready_status[writer] else "NOTREADY"
                     await self.broadcast(f"SERVER: {username} is {status_str}.\n")
                     await self.broadcast_lobby()
-                    if all(self.ready_status.values()) and len(self.ready_status) > 0:
-                        self.game_started = True
-                        await self.broadcast("START_GAME\n")
-                        await self.broadcast_positions()
+                    if all(self.ready_status.values()) and len(self.ready_status) > 0 and not self.game_started:
+                        if self.countdown_task:
+                            self.countdown_task.cancel()
+                        self.countdown_task = asyncio.create_task(self.start_countdown())
                     continue
 
                 if msg.startswith("MOVE|"):
@@ -166,6 +178,12 @@ class GameServer:
             self.broadcast_task.cancel()
             try:
                 await self.broadcast_task
+            except asyncio.CancelledError:
+                pass
+        if self.countdown_task:
+            self.countdown_task.cancel()
+            try:
+                await self.countdown_task
             except asyncio.CancelledError:
                 pass
         if self.server:
