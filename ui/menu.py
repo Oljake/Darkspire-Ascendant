@@ -8,7 +8,7 @@ from network.config import PORT
 async def main_menu():
     pygame.init()
     pygame.key.set_repeat(500, 50)  # Enable key repeat: 500ms delay, 50ms interval
-    screen = pygame.display.set_mode((600, 600))
+    screen = pygame.display.set_mode((1920, 1080))
     pygame.display.set_caption("Game Menu")
     font = pygame.font.SysFont(None, 48)
     button_font = pygame.font.SysFont(None, 36)
@@ -338,3 +338,4 @@ async def multiplayer_menu(screen):
         pygame.display.flip()
 
     return server_loop, server
+
