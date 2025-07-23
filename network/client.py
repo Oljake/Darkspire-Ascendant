@@ -1,4 +1,7 @@
-import pygame, asyncio, threading, sys
+import pygame
+import asyncio
+import threading
+import sys
 from network.config import PORT
 
 class ClientApp:
@@ -12,7 +15,7 @@ class ClientApp:
         self.positions = {}
         self.running = True
         self.game_started = False
-        self.is_loading = False  # New flag for loading state
+        self.is_loading = False
         self.chat_messages = []
         self.lobby_status = []
         self.input_text = ""
@@ -30,6 +33,12 @@ class ClientApp:
         self.leave_rect = pygame.Rect(400, 510, 150, 50)
         self.cancel_rect = pygame.Rect(400, 510, 150, 50)
         self.is_connecting = True
+        self.map = None
+        self.map_width = 0
+        self.map_height = 0
+        self.tile_size = 100  # 100x100 pixels per tile
+        self.player_width = 30
+        self.player_height = 50
         pygame.key.set_repeat(500, 50)
         threading.Thread(target=self.start_client, daemon=True).start()
 
@@ -133,6 +142,18 @@ class ClientApp:
                             username, x, y = parts
                             positions[username] = (int(x), int(y))
                     self.positions = positions
+                elif msg.startswith("MAP|"):
+                    try:
+                        _, width, height = msg.split('|')
+                        self.map_width = int(width)
+                        self.map_height = int(height)
+                        self.map = []
+                        for _ in range(self.map_height):
+                            line = await self.reader.readline()
+                            row = [int(c) for c in line.decode().strip()]
+                            self.map.append(row)
+                    except:
+                        self.chat_messages.append("Error receiving map")
                 elif msg in ("HOST_LEFT", "SERVER_SHUTDOWN"):
                     self.chat_messages.append("Server disconnected. Returning to menu.")
                     self.running = False
@@ -171,7 +192,6 @@ class ClientApp:
             cancel_surf = self.button_font.render("Cancel", True, cancel_text_color)
             cancel_text_rect = cancel_surf.get_rect(center=self.cancel_rect.center)
             self.screen.blit(cancel_surf, cancel_text_rect)
-
 
         elif self.is_loading:
             # Display loading screen
@@ -236,7 +256,7 @@ class ClientApp:
                 if self.is_connecting:
                     if self.cancel_rect.collidepoint(mouse_pos):
                         self.close()
-                        self.running = False  # ← this brings you back to main menu
+                        self.running = False
                 elif self.is_loading:
                     continue
                 else:
@@ -267,6 +287,16 @@ class ClientApp:
             surf = self.font.render(option, True, color)
             self.screen.blit(surf, (200, 200 + i * 60))
 
+    def get_camera_offset(self):
+        # Center the camera on the player's position
+        player_pos = self.positions.get(self.username, (750, 750))
+        camera_x = player_pos[0] - self.screen.get_width() // 2 + self.player_width // 2
+        camera_y = player_pos[1] - self.screen.get_height() // 2 + self.player_height // 2
+        # Clamp camera to map boundaries
+        camera_x = max(0, min(camera_x, self.map_width * self.tile_size - self.screen.get_width()))
+        camera_y = max(0, min(camera_y, self.map_height * self.tile_size - self.screen.get_height()))
+        return camera_x, camera_y
+
     def run_game(self):
         speed = 5
         clock = pygame.time.Clock()
@@ -277,9 +307,8 @@ class ClientApp:
                     self.close()
                     pygame.quit()
                     sys.exit()
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        self.paused = not self.paused
+                elif event.type == pygame.K_ESCAPE:
+                    self.paused = not self.paused
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.paused:
                     for i, rect in enumerate(self.pause_rects):
                         if rect.collidepoint(mouse_pos):
@@ -304,13 +333,33 @@ class ClientApp:
                 if dx != 0 or dy != 0:
                     asyncio.run_coroutine_threadsafe(self._send(f"MOVE|{dx}|{dy}"), self.loop)
 
+                # Calculate camera offset
+                camera_x, camera_y = self.get_camera_offset()
+
+                # Draw game
                 self.screen.fill((30, 30, 30))
+
+                # Draw map
+                if self.map:
+                    for y in range(self.map_height):
+                        for x in range(self.map_width):
+                            screen_x = x * self.tile_size - camera_x
+                            screen_y = y * self.tile_size - camera_y
+                            if -self.tile_size <= screen_x < self.screen.get_width() and -self.tile_size <= screen_y < self.screen.get_height():
+                                if self.map[y][x] == 1:  # Wall
+                                    pygame.draw.rect(self.screen, (100, 100, 100), (screen_x, screen_y, self.tile_size, self.tile_size))
+                                else:  # Open space
+                                    pygame.draw.rect(self.screen, (50, 50, 50), (screen_x, screen_y, self.tile_size, self.tile_size))
+
+                # Draw players
                 for user, (x, y) in self.positions.items():
                     color = (0, 200, 0) if user == self.username else (150, 150, 150)
-                    pygame.draw.rect(self.screen, color, (x, y, 40, 40))
+                    screen_x = x - camera_x
+                    screen_y = y - camera_y
+                    pygame.draw.rect(self.screen, color, (screen_x, screen_y, self.player_width, self.player_height))
                     if user != self.username:
                         name_surf = self.font.render(user, True, (255, 255, 255))
-                        self.screen.blit(name_surf, (x, y - 20))
+                        self.screen.blit(name_surf, (screen_x, screen_y - 20))
 
                 fps = int(clock.get_fps())
                 fps_surf = self.font.render(f"FPS: {fps}", True, (255, 255, 0))
