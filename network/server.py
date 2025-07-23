@@ -111,8 +111,8 @@ class GameServer:
                         _, dx, dy = msg.split('|')
                         dx, dy = int(dx), int(dy)
                         x, y = self.positions[writer]
-                        nx = max(0, min(560, x + dx))
-                        ny = max(0, min(360, y + dy))
+                        nx = x + dx
+                        ny = y + dy
                         self.positions[writer] = (nx, ny)
                         await self.broadcast_positions()
                     except:
