@@ -3,6 +3,8 @@ import asyncio
 import threading
 import sys
 from network.config import PORT
+from ui.tile_image_loader import TileImageLoader
+
 
 class ClientApp:
     def __init__(self, ip, username, screen, is_host=False, server_loop=None, server=None):
@@ -36,9 +38,14 @@ class ClientApp:
         self.map = None
         self.map_width = 0
         self.map_height = 0
-        self.tile_size = 100  # 100x100 pixels per tile
+        self.tile_size = 100
         self.player_width = 30
         self.player_height = 50
+
+        self.image_loader = TileImageLoader(self.tile_size, self.screen)
+        self.ground_images = self.image_loader.load_series("Ground", "Ground_{}.png", 20)
+        self.wall_images = self.image_loader.load_series("Maze_wall", "Maze_wall_{}.png", 10)
+
         pygame.key.set_repeat(500, 50)
         threading.Thread(target=self.start_client, daemon=True).start()
 
@@ -287,85 +294,76 @@ class ClientApp:
             surf = self.font.render(option, True, color)
             self.screen.blit(surf, (200, 200 + i * 60))
 
+
+
     def get_camera_offset(self):
-        # Center the camera on the player's position
-        player_pos = self.positions.get(self.username, (750, 750))
-        camera_x = player_pos[0] - self.screen.get_width() // 2 + self.player_width // 2
-        camera_y = player_pos[1] - self.screen.get_height() // 2 + self.player_height // 2
-        # Clamp camera to map boundaries
-        camera_x = max(0, min(camera_x, self.map_width * self.tile_size - self.screen.get_width()))
-        camera_y = max(0, min(camera_y, self.map_height * self.tile_size - self.screen.get_height()))
-        return camera_x, camera_y
+        px, py = self.positions.get(self.username, (750, 750))
+        cx = max(0, min(px - self.screen.get_width() // 2 + self.player_width // 2, self.map_width * self.tile_size - self.screen.get_width()))
+        cy = max(0, min(py - self.screen.get_height() // 2 + self.player_height // 2, self.map_height * self.tile_size - self.screen.get_height()))
+        return cx, cy
 
     def run_game(self):
         speed = 5
         clock = pygame.time.Clock()
         while self.running and self.game_started:
-            mouse_pos = pygame.mouse.get_pos()
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.close()
                     pygame.quit()
                     sys.exit()
-                elif event.type == pygame.K_ESCAPE:
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self.paused = not self.paused
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.paused:
                     for i, rect in enumerate(self.pause_rects):
-                        if rect.collidepoint(mouse_pos):
-                            if i == 0:  # Resume
+                        if rect.collidepoint(pygame.mouse.get_pos()):
+                            if i == 0:
                                 self.paused = False
-                            elif i == 1:  # Disconnect (guest) or Close Server (host)
+                            else:
                                 self.close()
                                 return
 
             if not self.paused:
                 keys = pygame.key.get_pressed()
                 dx = dy = 0
-                if keys[pygame.K_LEFT]:
-                    dx = -speed
-                if keys[pygame.K_RIGHT]:
-                    dx = speed
-                if keys[pygame.K_UP]:
-                    dy = -speed
-                if keys[pygame.K_DOWN]:
-                    dy = speed
-
-                if dx != 0 or dy != 0:
+                if keys[pygame.K_LEFT]: dx = -speed
+                if keys[pygame.K_RIGHT]: dx = speed
+                if keys[pygame.K_UP]: dy = -speed
+                if keys[pygame.K_DOWN]: dy = speed
+                if dx or dy:
                     asyncio.run_coroutine_threadsafe(self._send(f"MOVE|{dx}|{dy}"), self.loop)
 
-                # Calculate camera offset
-                camera_x, camera_y = self.get_camera_offset()
-
-                # Draw game
+                cx, cy = self.get_camera_offset()
                 self.screen.fill((30, 30, 30))
 
-                # Draw map
+                # prepare blits
+                tile_blits = []
                 if self.map:
                     for y in range(self.map_height):
                         for x in range(self.map_width):
-                            screen_x = x * self.tile_size - camera_x
-                            screen_y = y * self.tile_size - camera_y
-                            if -self.tile_size <= screen_x < self.screen.get_width() and -self.tile_size <= screen_y < self.screen.get_height():
-                                if self.map[y][x] == 1:  # Wall
-                                    pygame.draw.rect(self.screen, (100, 100, 100), (screen_x, screen_y, self.tile_size, self.tile_size))
-                                else:  # Open space
-                                    pygame.draw.rect(self.screen, (50, 50, 50), (screen_x, screen_y, self.tile_size, self.tile_size))
+                            sx, sy = x * self.tile_size - cx, y * self.tile_size - cy
+                            if -self.tile_size <= sx < self.screen.get_width() and -self.tile_size <= sy < self.screen.get_height():
+                                tile = self.map[y][x]
+                                idx = (x + y) % (len(self.wall_images) if tile == 1 else len(self.ground_images))
+                                img = self.wall_images[idx] if tile == 1 else self.ground_images[idx]
+                                tile_blits.append((img, (sx, sy)))
+                self.screen.blits(tile_blits)
 
-                # Draw players
                 for user, (x, y) in self.positions.items():
                     color = (0, 200, 0) if user == self.username else (150, 150, 150)
-                    screen_x = x - camera_x
-                    screen_y = y - camera_y
-                    pygame.draw.rect(self.screen, color, (screen_x, screen_y, self.player_width, self.player_height))
+                    sx, sy = x - cx, y - cy
+                    pygame.draw.rect(self.screen, color, (sx, sy, self.player_width, self.player_height))
                     if user != self.username:
-                        name_surf = self.font.render(user, True, (255, 255, 255))
-                        self.screen.blit(name_surf, (screen_x, screen_y - 20))
+                        self.screen.blit(self.font.render(user, True, (255, 255, 255)), (sx, sy - 20))
 
-                fps = int(clock.get_fps())
-                fps_surf = self.font.render(f"FPS: {fps}", True, (255, 255, 0))
+                fps_surf = self.font.render(f"FPS: {int(clock.get_fps())}", True, (255, 255, 0))
                 self.screen.blit(fps_surf, (5, 5))
+
             else:
-                self.draw_pause_menu()
+                self.screen.fill((30, 30, 30, 128))
+                for i, option in enumerate(self.pause_options):
+                    color = (0, 200, 0) if self.pause_rects[i].collidepoint(pygame.mouse.get_pos()) else (255, 255, 255)
+                    surf = self.font.render(option, True, color)
+                    self.screen.blit(surf, self.pause_rects[i].topleft)
 
             pygame.display.flip()
-            clock.tick(60)
+            clock.tick(6000)

@@ -1,1 +1,21 @@
-
+# images
+#     Ground
+#         Ground_0
+#         Ground_1
+#         ...
+#     Maze_wall
+#         Maze_wall_0
+#         Maze_wall_1
+#         ...
+# network
+#     __init__.py
+#     async_utils.py
+#     client.py
+#     config.py
+#     server.py
+# ui
+#     __init__.py
+#     menu.py
+#     runner.py
+#     tile_image_loader.py
+# main.py

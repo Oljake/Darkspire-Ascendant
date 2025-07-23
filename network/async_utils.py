@@ -1,6 +1,5 @@
 import asyncio, threading
 from network.server import GameServer
-from network.config import PORT
 
 
 def run_asyncio_loop(loop):
