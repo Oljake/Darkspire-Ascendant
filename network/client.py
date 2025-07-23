@@ -12,6 +12,7 @@ class ClientApp:
         self.positions = {}
         self.running = True
         self.game_started = False
+        self.is_loading = False  # New flag for loading state
         self.chat_messages = []
         self.lobby_status = []
         self.input_text = ""
@@ -27,8 +28,8 @@ class ClientApp:
         self.pause_rects = [pygame.Rect(200, 200 + i * 60, 200, 40) for i in range(len(self.pause_options))]
         self.ready_rect = pygame.Rect(400, 450, 150, 50)
         self.leave_rect = pygame.Rect(400, 510, 150, 50)
-        self.is_connecting = True  # New flag for connection status
-        pygame.key.set_repeat(500, 50)  # Enable key repeat: 500ms delay, 50ms interval
+        self.is_connecting = True
+        pygame.key.set_repeat(500, 50)
         threading.Thread(target=self.start_client, daemon=True).start()
 
     async def _send(self, msg):
@@ -47,7 +48,7 @@ class ClientApp:
             asyncio.run_coroutine_threadsafe(self._send(msg), self.loop)
 
     def toggle_ready(self):
-        if not self.is_connecting:  # Only allow toggling ready when connected
+        if not self.is_connecting:
             self.ready = not self.ready
             asyncio.run_coroutine_threadsafe(self._send("/ready"), self.loop)
 
@@ -91,7 +92,7 @@ class ClientApp:
             if data.decode().strip() == "ENTER_USERNAME":
                 self.writer.write((self.username + "\n").encode())
                 await self.writer.drain()
-                self.is_connecting = False  # Connection established
+                self.is_connecting = False
 
             while True:
                 data = await self.reader.readline()
@@ -100,6 +101,9 @@ class ClientApp:
                 msg = data.decode().strip()
                 if msg == "START_GAME":
                     self.game_started = True
+                    self.is_loading = False
+                elif msg == "LOADING_GAME":
+                    self.is_loading = True
                 elif msg == "LOBBY_STATUS":
                     lobby_status = []
                     while True:
@@ -153,10 +157,14 @@ class ClientApp:
         mouse_pos = pygame.mouse.get_pos()
 
         if self.is_connecting:
-            # Display connecting message
             connecting_surf = self.font.render("Joining server...", True, (255, 255, 255))
             connecting_rect = connecting_surf.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
             self.screen.blit(connecting_surf, connecting_rect)
+        elif self.is_loading:
+            # Display loading screen
+            loading_surf = self.font.render("Loading game...", True, (255, 255, 255))
+            loading_rect = loading_surf.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
+            self.screen.blit(loading_surf, loading_rect)
         else:
             # Draw chat log (left side)
             y = 10
@@ -171,7 +179,7 @@ class ClientApp:
             self.screen.blit(title_surf, (350, y))
             y += 30
             for username, status in self.lobby_status:
-                status_color = (0, 255, 0) if status.lower() == "ready" else (255, 0, 0)  # Case-insensitive comparison
+                status_color = (0, 255, 0) if status.lower() == "ready" else (255, 0, 0)
                 surf = self.font.render(f"{username}: {status}", True, status_color)
                 self.screen.blit(surf, (350, y))
                 y += 25
@@ -212,8 +220,8 @@ class ClientApp:
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if self.is_connecting:
-                    continue  # Skip all mouse events while connecting
+                if self.is_connecting or self.is_loading:
+                    continue
                 if self.ready_rect.collidepoint(mouse_pos):
                     self.toggle_ready()
                 elif self.leave_rect.collidepoint(mouse_pos):
