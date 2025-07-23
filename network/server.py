@@ -42,8 +42,8 @@ class GameServer:
         self.server = None
         self.countdown_task = None
         self.map = None
-        self.map_width = 50  # 50 tiles wide
-        self.map_height = 50  # 50 tiles high
+        self.map_width = 3000  # 50 tiles wide
+        self.map_height = 3000  # 50 tiles high
         self.tile_size = 100  # 100x100 pixels per tile
         self.player_width = 30
         self.player_height = 50
@@ -87,20 +87,16 @@ class GameServer:
         return True
 
     async def start_countdown(self):
-        # Generate map before starting
         self.generate_map()
-        # Broadcast map to clients
         await self.broadcast_map()
-        # Send countdown messages
         for i in range(3, 0, -1):
             await self.broadcast(f"SERVER: Starting in {i}...")
             await asyncio.sleep(1)
+
         await self.broadcast("SERVER: Starting")
         await asyncio.sleep(1)
-        # Send loading game signal
         await self.broadcast("LOADING_GAME")
         await asyncio.sleep(2)  # Simulate loading time
-        # Start the game
         self.game_started = True
         await self.broadcast("START_GAME")
         await self.broadcast_positions()
@@ -120,7 +116,17 @@ class GameServer:
         username = data.decode().strip() or f"{addr}"
         self.usernames[writer] = username
         self.ready_status[writer] = False
-        self.positions[writer] = (750, 750)  # Adjusted for 100x100 tiles
+        self.positions[writer] = (750, 750)
+
+        # Cancel countdown if a new client joins during countdown
+        if self.countdown_task and not self.game_started:
+            self.countdown_task.cancel()
+            try:
+                await self.countdown_task
+            except asyncio.CancelledError:
+                pass
+            self.countdown_task = None
+            await self.broadcast("SERVER: Countdown canceled due to new player joining.\n")
 
         self.clients.append(writer)
         await self.broadcast(f"SERVER: {username} joined the lobby.\n")
@@ -128,6 +134,7 @@ class GameServer:
 
         if self.host is None:
             self.host = writer
+
         try:
             while True:
                 data = await reader.readline()
@@ -142,7 +149,6 @@ class GameServer:
                     await self.broadcast_lobby()
 
                     if not self.ready_status[writer]:
-                        # Cancel countdown & notify
                         if self.countdown_task:
                             self.countdown_task.cancel()
                             try:
@@ -150,7 +156,7 @@ class GameServer:
                             except asyncio.CancelledError:
                                 pass
                             self.countdown_task = None
-                        await self.broadcast("SERVER: Canceled.... player is not ready.\n")
+                        await self.broadcast("SERVER: Countdown canceled due to player not ready.\n")
                     elif all(self.ready_status.values()) and len(self.ready_status) > 0 and not self.game_started:
                         if self.countdown_task:
                             self.countdown_task.cancel()
@@ -165,18 +171,15 @@ class GameServer:
                         new_pos = (x, y)
 
                         if self.game_started:
-                            # Try moving in x direction first
                             if dx != 0:
                                 nx = x + dx
                                 if self.is_position_valid(nx, y):
                                     new_pos = (nx, y)
-                            # Then try moving in y direction
                             if dy != 0:
                                 ny = new_pos[1] + dy
                                 if self.is_position_valid(new_pos[0], ny):
                                     new_pos = (new_pos[0], ny)
 
-                        # Update position if it changed
                         if new_pos != (x, y):
                             self.positions[writer] = new_pos
                             await self.broadcast_positions()

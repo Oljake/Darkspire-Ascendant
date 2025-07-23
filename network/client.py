@@ -4,6 +4,7 @@ import threading
 import sys
 from network.config import PORT
 from ui.tile_image_loader import TileImageLoader
+import random
 
 
 class ClientApp:
@@ -35,9 +36,6 @@ class ClientApp:
         self.leave_rect = pygame.Rect(400, 510, 150, 50)
         self.cancel_rect = pygame.Rect(400, 510, 150, 50)
         self.is_connecting = True
-        self.map = None
-        self.map_width = 0
-        self.map_height = 0
         self.tile_size = 100
         self.player_width = 30
         self.player_height = 50
@@ -45,6 +43,7 @@ class ClientApp:
         self.image_loader = TileImageLoader(self.tile_size, self.screen)
         self.ground_images = self.image_loader.load_series("Ground", "Ground_{}.png", 20)
         self.wall_images = self.image_loader.load_series("Maze_wall", "Maze_wall_{}.png", 10)
+        self.tile_image_indices = {}
 
         pygame.key.set_repeat(500, 50)
         threading.Thread(target=self.start_client, daemon=True).start()
@@ -305,6 +304,7 @@ class ClientApp:
     def run_game(self):
         speed = 5
         clock = pygame.time.Clock()
+        self.tile_image_indices = {}  # Initialize once here, not each frame
         while self.running and self.game_started:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -335,35 +335,43 @@ class ClientApp:
                 cx, cy = self.get_camera_offset()
                 self.screen.fill((30, 30, 30))
 
-                # prepare blits
+                start_x = max(cx // self.tile_size, 0)
+                end_x = min((cx + self.screen.get_width()) // self.tile_size + 1, self.map_width)
+                start_y = max(cy // self.tile_size, 0)
+                end_y = min((cy + self.screen.get_height()) // self.tile_size + 1, self.map_height)
+
                 tile_blits = []
-                if self.map:
-                    for y in range(self.map_height):
-                        for x in range(self.map_width):
-                            sx, sy = x * self.tile_size - cx, y * self.tile_size - cy
-                            if -self.tile_size <= sx < self.screen.get_width() and -self.tile_size <= sy < self.screen.get_height():
-                                tile = self.map[y][x]
-                                idx = (x + y) % (len(self.wall_images) if tile == 1 else len(self.ground_images))
-                                img = self.wall_images[idx] if tile == 1 else self.ground_images[idx]
-                                tile_blits.append((img, (sx, sy)))
+                for y in range(start_y, end_y):
+                    for x in range(start_x, end_x):
+                        tile = self.map[y][x]
+                        key = (x, y, tile)
+                        if key not in self.tile_image_indices:
+                            imgs = self.wall_images if tile == 1 else self.ground_images
+                            self.tile_image_indices[key] = random.randrange(len(imgs))
+                        idx = self.tile_image_indices[key]
+                        imgs = self.wall_images if tile == 1 else self.ground_images
+                        img = imgs[idx]
+                        sx, sy = x * self.tile_size - cx, y * self.tile_size - cy
+                        tile_blits.append((img, (sx, sy)))
                 self.screen.blits(tile_blits)
 
                 for user, (x, y) in self.positions.items():
-                    color = (0, 200, 0) if user == self.username else (150, 150, 150)
                     sx, sy = x - cx, y - cy
-                    pygame.draw.rect(self.screen, color, (sx, sy, self.player_width, self.player_height))
-                    if user != self.username:
-                        self.screen.blit(self.font.render(user, True, (255, 255, 255)), (sx, sy - 20))
+                    if -self.player_width < sx < self.screen.get_width() and -self.player_height < sy < self.screen.get_height():
+                        color = (0, 200, 0) if user == self.username else (150, 150, 150)
+                        pygame.draw.rect(self.screen, color, (sx, sy, self.player_width, self.player_height))
+                        if user != self.username:
+                            self.screen.blit(self.font.render(user, True, (255, 255, 255)), (sx, sy - 20))
 
                 fps_surf = self.font.render(f"FPS: {int(clock.get_fps())}", True, (255, 255, 0))
                 self.screen.blit(fps_surf, (5, 5))
 
             else:
                 self.screen.fill((30, 30, 30, 128))
-                for i, option in enumerate(self.pause_options):
-                    color = (0, 200, 0) if self.pause_rects[i].collidepoint(pygame.mouse.get_pos()) else (255, 255, 255)
-                    surf = self.font.render(option, True, color)
-                    self.screen.blit(surf, self.pause_rects[i].topleft)
+                for i, rect in enumerate(self.pause_rects):
+                    color = (0, 200, 0) if rect.collidepoint(pygame.mouse.get_pos()) else (255, 255, 255)
+                    surf = self.font.render(self.pause_options[i], True, color)
+                    self.screen.blit(surf, rect.topleft)
 
             pygame.display.flip()
-            clock.tick(6000)
+            clock.tick(600)
