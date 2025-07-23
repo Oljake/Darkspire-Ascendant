@@ -253,7 +253,7 @@ class GameServer:
         while True:
             if self.game_started:
                 await self.broadcast_positions()
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.016)  # 60fps
 
     async def run_server(self):
         self.server = await asyncio.start_server(self.handle_client, HOST, PORT)
