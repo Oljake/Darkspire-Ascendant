@@ -338,4 +338,3 @@ async def multiplayer_menu(screen):
         pygame.display.flip()
 
     return server_loop, server
-
