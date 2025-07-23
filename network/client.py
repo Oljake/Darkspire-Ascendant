@@ -1,7 +1,6 @@
 import pygame, asyncio, threading, sys
 from network.config import PORT
 
-
 class ClientApp:
     def __init__(self, ip, username, screen, is_host=False, server_loop=None, server=None):
         self.screen = screen
@@ -16,14 +15,20 @@ class ClientApp:
         self.chat_messages = []
         self.lobby_status = []
         self.input_text = ""
+        self.input_active = False
         self.loop = asyncio.new_event_loop()
         self.font = pygame.font.SysFont(None, 24)
+        self.button_font = pygame.font.SysFont(None, 36)
         self.is_host = is_host
         self.server_loop = server_loop
         self.server = server
         self.paused = False
         self.pause_options = ["Resume", "Close Server"] if is_host else ["Resume", "Disconnect"]
         self.pause_rects = [pygame.Rect(200, 200 + i * 60, 200, 40) for i in range(len(self.pause_options))]
+        self.ready_rect = pygame.Rect(400, 450, 150, 50)
+        self.leave_rect = pygame.Rect(400, 510, 150, 50)
+        self.is_connecting = True  # New flag for connection status
+        pygame.key.set_repeat(500, 50)  # Enable key repeat: 500ms delay, 50ms interval
         threading.Thread(target=self.start_client, daemon=True).start()
 
     async def _send(self, msg):
@@ -36,11 +41,15 @@ class ClientApp:
 
     def send_message(self, msg):
         if msg:
+            self.chat_messages.append(f"{self.username}: {msg}")
+            if len(self.chat_messages) > 15:
+                self.chat_messages.pop(0)
             asyncio.run_coroutine_threadsafe(self._send(msg), self.loop)
 
     def toggle_ready(self):
-        self.ready = not self.ready
-        asyncio.run_coroutine_threadsafe(self._send("/ready"), self.loop)
+        if not self.is_connecting:  # Only allow toggling ready when connected
+            self.ready = not self.ready
+            asyncio.run_coroutine_threadsafe(self._send("/ready"), self.loop)
 
     def close(self):
         self.running = False
@@ -82,6 +91,7 @@ class ClientApp:
             if data.decode().strip() == "ENTER_USERNAME":
                 self.writer.write((self.username + "\n").encode())
                 await self.writer.drain()
+                self.is_connecting = False  # Connection established
 
             while True:
                 data = await self.reader.readline()
@@ -117,8 +127,7 @@ class ClientApp:
                         if len(parts) == 3:
                             username, x, y = parts
                             positions[username] = (int(x), int(y))
-                    self.positions = positions  # ✅ overwrites old dict
-
+                    self.positions = positions
                 elif msg in ("HOST_LEFT", "SERVER_SHUTDOWN"):
                     self.chat_messages.append("Server disconnected. Returning to menu.")
                     self.running = False
@@ -141,21 +150,87 @@ class ClientApp:
 
     def draw_lobby(self):
         self.screen.fill((30, 30, 30))
-        y = 10
-        for msg in self.chat_messages:
-            surf = self.font.render(msg, True, (255, 255, 255))
-            self.screen.blit(surf, (10, y))
-            y += 25
-        y = 400
-        for username, status in self.lobby_status:
-            surf = self.font.render(f"{username}: {status}", True, (255, 255, 255))
-            self.screen.blit(surf, (10, y))
-            y += 25
-        input_surf = self.font.render(f"Chat: {self.input_text}", True, (255, 255, 255))
-        self.screen.blit(input_surf, (10, 550))
-        ready_text = "Unready" if self.ready else "Ready"
-        ready_surf = self.font.render(f"[ENTER] {ready_text}", True, (0, 200, 0))
-        self.screen.blit(ready_surf, (400, 550))
+        mouse_pos = pygame.mouse.get_pos()
+
+        if self.is_connecting:
+            # Display connecting message
+            connecting_surf = self.font.render("Joining server...", True, (255, 255, 255))
+            connecting_rect = connecting_surf.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
+            self.screen.blit(connecting_surf, connecting_rect)
+        else:
+            # Draw chat log (left side)
+            y = 10
+            for msg in self.chat_messages:
+                surf = self.font.render(msg, True, (255, 255, 255))
+                self.screen.blit(surf, (10, y))
+                y += 25
+
+            # Draw player list (right side)
+            y = 10
+            title_surf = self.font.render("Players:", True, (255, 255, 255))
+            self.screen.blit(title_surf, (350, y))
+            y += 30
+            for username, status in self.lobby_status:
+                status_color = (0, 255, 0) if status.lower() == "ready" else (255, 0, 0)  # Case-insensitive comparison
+                surf = self.font.render(f"{username}: {status}", True, status_color)
+                self.screen.blit(surf, (350, y))
+                y += 25
+
+            # Draw chat input
+            input_rect = pygame.Rect(10, 550, 300, 30)
+            input_border_color = (0, 255, 0) if self.input_active else (255, 255, 255)
+            pygame.draw.rect(self.screen, input_border_color, input_rect, 2, border_radius=5)
+            input_surf = self.font.render(f"Chat: {self.input_text}", True, (255, 255, 255))
+            input_text_rect = input_surf.get_rect(topleft=(20, 560))
+            self.screen.blit(input_surf, input_text_rect)
+
+            # Draw Ready/Unready button
+            is_ready_hovered = self.ready_rect.collidepoint(mouse_pos)
+            ready_bg_color = (0, 100, 0) if is_ready_hovered else (50, 50, 50)
+            ready_text_color = (255, 255, 255) if is_ready_hovered else (200, 200, 200)
+            pygame.draw.rect(self.screen, ready_bg_color, self.ready_rect, border_radius=10)
+            pygame.draw.rect(self.screen, (255, 255, 255), self.ready_rect, 2, border_radius=10)
+            ready_text = "Unready" if self.ready else "Ready"
+            ready_surf = self.button_font.render(ready_text, True, ready_text_color)
+            ready_text_rect = ready_surf.get_rect(center=self.ready_rect.center)
+            self.screen.blit(ready_surf, ready_text_rect)
+
+            # Draw Leave Lobby button
+            is_leave_hovered = self.leave_rect.collidepoint(mouse_pos)
+            leave_bg_color = (100, 0, 0) if is_leave_hovered else (50, 50, 50)
+            leave_text_color = (255, 255, 255) if is_leave_hovered else (200, 200, 200)
+            pygame.draw.rect(self.screen, leave_bg_color, self.leave_rect, border_radius=10)
+            pygame.draw.rect(self.screen, (255, 255, 255), self.leave_rect, 2, border_radius=10)
+            leave_surf = self.button_font.render("Leave Lobby", True, leave_text_color)
+            leave_text_rect = leave_surf.get_rect(center=self.leave_rect.center)
+            self.screen.blit(leave_surf, leave_text_rect)
+
+        # Handle lobby events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.close()
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self.is_connecting:
+                    continue  # Skip all mouse events while connecting
+                if self.ready_rect.collidepoint(mouse_pos):
+                    self.toggle_ready()
+                elif self.leave_rect.collidepoint(mouse_pos):
+                    self.close()
+                    self.running = False
+                elif input_rect.collidepoint(mouse_pos):
+                    self.input_active = True
+                else:
+                    self.input_active = False
+            elif event.type == pygame.KEYDOWN and self.input_active:
+                if event.key == pygame.K_RETURN and self.input_text:
+                    self.send_message(self.input_text)
+                    self.input_text = ""
+                elif event.key == pygame.K_BACKSPACE:
+                    self.input_text = self.input_text[:-1]
+                elif event.unicode.isprintable():
+                    self.input_text += event.unicode
 
     def draw_pause_menu(self):
         self.screen.fill((30, 30, 30, 128))
