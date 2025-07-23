@@ -89,7 +89,18 @@ class GameServer:
                     status_str = "READY" if self.ready_status[writer] else "NOTREADY"
                     await self.broadcast(f"SERVER: {username} is {status_str}.\n")
                     await self.broadcast_lobby()
-                    if all(self.ready_status.values()) and len(self.ready_status) > 0 and not self.game_started:
+
+                    if not self.ready_status[writer]:
+                        # Cancel countdown & notify
+                        if self.countdown_task:
+                            self.countdown_task.cancel()
+                            try:
+                                await self.countdown_task
+                            except asyncio.CancelledError:
+                                pass
+                            self.countdown_task = None
+                        await self.broadcast("SERVER: Canceled.... player is not ready.\n")
+                    elif all(self.ready_status.values()) and len(self.ready_status) > 0 and not self.game_started:
                         if self.countdown_task:
                             self.countdown_task.cancel()
                         self.countdown_task = asyncio.create_task(self.start_countdown())
