@@ -26,6 +26,8 @@ class ClientApp:
         self.loop = asyncio.new_event_loop()
         self.font = pygame.font.SysFont(None, 24)
         self.button_font = pygame.font.SysFont(None, 36)
+        self.clock = pygame.time.Clock()
+        self.fps_font = pygame.font.SysFont("Arial", 18)
         self.is_host = is_host
         self.server_loop = server_loop
         self.server = server
@@ -286,14 +288,25 @@ class ClientApp:
                     self.input_text += event.unicode
 
     def draw_pause_menu(self):
-        self.screen.fill((30, 30, 30, 128))
+        # Create a new surface for the pause menu with per-pixel alpha
+        pause_surface = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+        # Fill with half-transparent background (alpha=128 for ~50% opacity)
+        pause_surface.fill((30, 30, 30, 128))
+
+        # Draw pause menu options
         mouse_pos = pygame.mouse.get_pos()
         for i, option in enumerate(self.pause_options):
-            color = (0, 200, 0) if self.pause_rects[i].collidepoint(mouse_pos) else (255, 255, 255)
-            surf = self.font.render(option, True, color)
-            self.screen.blit(surf, (200, 200 + i * 60))
+            rect = self.pause_rects[i]
+            color = (0, 200, 0) if rect.collidepoint(mouse_pos) else (255, 255, 255)
+            surf = self.button_font.render(option, True, color)
+            text_rect = surf.get_rect(center=rect.center)
+            # Draw button background
+            pygame.draw.rect(pause_surface, (50, 50, 50, 200), rect, border_radius=10)
+            pygame.draw.rect(pause_surface, (255, 255, 255, 255), rect, 2, border_radius=10)
+            pause_surface.blit(surf, text_rect)
 
-
+        # Blit the pause surface onto the main screen
+        self.screen.blit(pause_surface, (0, 0))
 
     def get_camera_offset(self):
         px, py = self.positions.get(self.username, (750, 750))
@@ -303,9 +316,11 @@ class ClientApp:
 
     def run_game(self):
         speed = 5
-        clock = pygame.time.Clock()
-        self.tile_image_indices = {}  # Initialize once here, not each frame
+        self.tile_image_indices.clear()
         while self.running and self.game_started:
+            dt = self.clock.tick()  # unlimited FPS, returns ms since last call
+            fps = int(self.clock.get_fps())
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.close()
@@ -316,62 +331,60 @@ class ClientApp:
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.paused:
                     for i, rect in enumerate(self.pause_rects):
                         if rect.collidepoint(pygame.mouse.get_pos()):
-                            if i == 0:
+                            if i == 0:  # Resume
                                 self.paused = False
-                            else:
+                            elif i == 1:  # Close Server or Disconnect
                                 self.close()
                                 return
 
-            if not self.paused:
-                keys = pygame.key.get_pressed()
-                dx = dy = 0
-                if keys[pygame.K_LEFT]: dx = -speed
-                if keys[pygame.K_RIGHT]: dx = speed
-                if keys[pygame.K_UP]: dy = -speed
-                if keys[pygame.K_DOWN]: dy = speed
-                if dx or dy:
-                    asyncio.run_coroutine_threadsafe(self._send(f"MOVE|{dx}|{dy}"), self.loop)
+            # Draw game elements
+            cx, cy = self.get_camera_offset()
+            self.screen.fill((30, 30, 30))
 
-                cx, cy = self.get_camera_offset()
-                self.screen.fill((30, 30, 30))
+            # Draw map tiles
+            start_x = max(cx // self.tile_size, 0)
+            end_x = min((cx + self.screen.get_width()) // self.tile_size + 1, self.map_width)
+            start_y = max(cy // self.tile_size, 0)
+            end_y = min((cy + self.screen.get_height()) // self.tile_size + 1, self.map_height)
 
-                start_x = max(cx // self.tile_size, 0)
-                end_x = min((cx + self.screen.get_width()) // self.tile_size + 1, self.map_width)
-                start_y = max(cy // self.tile_size, 0)
-                end_y = min((cy + self.screen.get_height()) // self.tile_size + 1, self.map_height)
-
-                tile_blits = []
-                for y in range(start_y, end_y):
-                    for x in range(start_x, end_x):
-                        tile = self.map[y][x]
-                        key = (x, y, tile)
-                        if key not in self.tile_image_indices:
-                            imgs = self.wall_images if tile == 1 else self.ground_images
-                            self.tile_image_indices[key] = random.randrange(len(imgs))
-                        idx = self.tile_image_indices[key]
+            tile_blits = []
+            for y in range(start_y, end_y):
+                for x in range(start_x, end_x):
+                    tile = self.map[y][x]
+                    key = (x, y, tile)
+                    if key not in self.tile_image_indices:
                         imgs = self.wall_images if tile == 1 else self.ground_images
-                        img = imgs[idx]
-                        sx, sy = x * self.tile_size - cx, y * self.tile_size - cy
-                        tile_blits.append((img, (sx, sy)))
-                self.screen.blits(tile_blits)
+                        self.tile_image_indices[key] = random.randrange(len(imgs))
+                    idx = self.tile_image_indices[key]
+                    imgs = self.wall_images if tile == 1 else self.ground_images
+                    img = imgs[idx]
+                    sx, sy = x * self.tile_size - cx, y * self.tile_size - cy
+                    tile_blits.append((img, (sx, sy)))
+            self.screen.blits(tile_blits)
 
-                for user, (x, y) in self.positions.items():
-                    sx, sy = x - cx, y - cy
-                    if -self.player_width < sx < self.screen.get_width() and -self.player_height < sy < self.screen.get_height():
-                        color = (0, 200, 0) if user == self.username else (150, 150, 150)
-                        pygame.draw.rect(self.screen, color, (sx, sy, self.player_width, self.player_height))
-                        if user != self.username:
-                            self.screen.blit(self.font.render(user, True, (255, 255, 255)), (sx, sy - 20))
+            # Draw players
+            for user, (x, y) in self.positions.items():
+                sx, sy = x - cx, y - cy
+                if -self.player_width < sx < self.screen.get_width() and -self.player_height < sy < self.screen.get_height():
+                    color = (0, 0, 255) if user == self.username else (255, 0, 0)
+                    pygame.draw.rect(self.screen, color, pygame.Rect(sx, sy, self.player_width, self.player_height))
 
-                fps_surf = self.font.render(f"FPS: {int(clock.get_fps())}", True, (255, 255, 0))
-                self.screen.blit(fps_surf, (5, 5))
+            # Update movement only if not paused
+            if not self.paused:
+                self.accum_time = getattr(self, 'accum_time', 0) + dt
+                while self.accum_time >= 1000 / 60:
+                    keys = pygame.key.get_pressed()
+                    dx = (keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]) * speed
+                    dy = (keys[pygame.K_DOWN] - keys[pygame.K_UP]) * speed
+                    if dx or dy:
+                        asyncio.run_coroutine_threadsafe(self._send(f"MOVE|{dx}|{dy}"), self.loop)
+                    self.accum_time -= 1000 / 60
 
-            else:
-                self.screen.fill((30, 30, 30, 128))
-                for i, rect in enumerate(self.pause_rects):
-                    color = (0, 200, 0) if rect.collidepoint(pygame.mouse.get_pos()) else (255, 255, 255)
-                    surf = self.font.render(self.pause_options[i], True, color)
-                    self.screen.blit(surf, rect.topleft)
+            # Draw pause menu if paused (after game elements to preserve background)
+            if self.paused:
+                self.draw_pause_menu()
 
+            # Draw FPS counter
+            fps_surf = self.fps_font.render(f"FPS: {fps}", True, (255, 255, 0))
+            self.screen.blit(fps_surf, (5, 5))
             pygame.display.flip()
-            clock.tick(600)
