@@ -29,7 +29,7 @@ async def main_menu():
                             print("Singleplayer mode (not implemented)")
                         elif i == 1:
                             await multiplayer_menu(screen)
-                            screen = pygame.display.set_mode((600, 600))
+
                             pygame.display.set_caption("Game Menu")
 
         screen.fill((30, 30, 30))
@@ -124,7 +124,7 @@ async def multiplayer_menu(screen):
                         try:
                             client = ClientApp(ip_input_text, username_input_text, screen, is_host=True, server_loop=server_loop, server=server)
                             await run_client(client)
-                            screen = pygame.display.set_mode((600, 600))
+
                             pygame.display.set_caption("Game Menu")
                             return server_loop, server
                         except Exception as e:
@@ -166,7 +166,7 @@ async def multiplayer_menu(screen):
                             try:
                                 client = ClientApp(ip_input_text, username_input_text, screen, is_host=False)
                                 await run_client(client)
-                                screen = pygame.display.set_mode((600, 600))
+
                                 pygame.display.set_caption("Game Menu")
                                 return None, None
                             except Exception as e:
@@ -207,7 +207,7 @@ async def multiplayer_menu(screen):
                         try:
                             client = ClientApp(ip_input_text, username_input_text, screen, is_host=True, server_loop=server_loop, server=server)
                             await run_client(client)
-                            screen = pygame.display.set_mode((600, 600))
+
                             pygame.display.set_caption("Game Menu")
                             return server_loop, server
                         except Exception as e:
@@ -232,7 +232,7 @@ async def multiplayer_menu(screen):
                         try:
                             client = ClientApp(ip_input_text, username_input_text, screen, is_host=False)
                             await run_client(client)
-                            screen = pygame.display.set_mode((600, 600))
+
                             pygame.display.set_caption("Game Menu")
                             return None, None
                         except Exception as e:
