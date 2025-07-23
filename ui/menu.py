@@ -12,7 +12,7 @@ async def main_menu():
     pygame.display.set_caption("Game Menu")
     font = pygame.font.SysFont(None, 48)
     button_font = pygame.font.SysFont(None, 36)
-    options = ["Singleplayer", "Multiplayer"]
+    options = ["Singleplayer", "Multiplayer", "Quit to Desktop"]
     button_rects = [pygame.Rect(200, 200 + i * 80, 200, 50) for i in range(len(options))]
     running = True
 
@@ -31,6 +31,10 @@ async def main_menu():
                             await multiplayer_menu(screen)
 
                             pygame.display.set_caption("Game Menu")
+
+                        elif i == 2:
+                            pygame.quit()
+                            sys.exit()
 
         screen.fill((30, 30, 30))
         for i, option in enumerate(options):
