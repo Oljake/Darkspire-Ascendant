@@ -28,6 +28,7 @@ class ClientApp:
         self.pause_rects = [pygame.Rect(200, 200 + i * 60, 200, 40) for i in range(len(self.pause_options))]
         self.ready_rect = pygame.Rect(400, 450, 150, 50)
         self.leave_rect = pygame.Rect(400, 510, 150, 50)
+        self.cancel_rect = pygame.Rect(400, 510, 150, 50)
         self.is_connecting = True
         pygame.key.set_repeat(500, 50)
         threading.Thread(target=self.start_client, daemon=True).start()
@@ -160,6 +161,18 @@ class ClientApp:
             connecting_surf = self.font.render("Joining server...", True, (255, 255, 255))
             connecting_rect = connecting_surf.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
             self.screen.blit(connecting_surf, connecting_rect)
+
+            # Draw cancel button
+            is_cancel_hovered = self.cancel_rect.collidepoint(mouse_pos)
+            cancel_bg_color = (100, 0, 0) if is_cancel_hovered else (50, 50, 50)
+            cancel_text_color = (255, 255, 255) if is_cancel_hovered else (200, 200, 200)
+            pygame.draw.rect(self.screen, cancel_bg_color, self.cancel_rect, border_radius=10)
+            pygame.draw.rect(self.screen, (255, 255, 255), self.cancel_rect, 2, border_radius=10)
+            cancel_surf = self.button_font.render("Cancel", True, cancel_text_color)
+            cancel_text_rect = cancel_surf.get_rect(center=self.cancel_rect.center)
+            self.screen.blit(cancel_surf, cancel_text_rect)
+
+
         elif self.is_loading:
             # Display loading screen
             loading_surf = self.font.render("Loading game...", True, (255, 255, 255))
@@ -213,24 +226,30 @@ class ClientApp:
             leave_text_rect = leave_surf.get_rect(center=self.leave_rect.center)
             self.screen.blit(leave_surf, leave_text_rect)
 
-        # Handle lobby events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.close()
                 pygame.quit()
                 sys.exit()
+
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if self.is_connecting or self.is_loading:
+                if self.is_connecting:
+                    if self.cancel_rect.collidepoint(mouse_pos):
+                        self.close()
+                        self.running = False  # ← this brings you back to main menu
+                elif self.is_loading:
                     continue
-                if self.ready_rect.collidepoint(mouse_pos):
-                    self.toggle_ready()
-                elif self.leave_rect.collidepoint(mouse_pos):
-                    self.close()
-                    self.running = False
-                elif input_rect.collidepoint(mouse_pos):
-                    self.input_active = True
                 else:
-                    self.input_active = False
+                    if self.ready_rect.collidepoint(mouse_pos):
+                        self.toggle_ready()
+                    elif self.leave_rect.collidepoint(mouse_pos):
+                        self.close()
+                        self.running = False
+                    elif input_rect.collidepoint(mouse_pos):
+                        self.input_active = True
+                    else:
+                        self.input_active = False
+
             elif event.type == pygame.KEYDOWN and self.input_active:
                 if event.key == pygame.K_RETURN and self.input_text:
                     self.send_message(self.input_text)
