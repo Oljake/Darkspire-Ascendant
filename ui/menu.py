@@ -4,13 +4,14 @@ from network.async_utils import start_server
 from network.client import ClientApp
 from ui.runner import run_client
 from network.config import PORT
+from singleplayer.main import SingleplayerGame
+
 
 async def main_menu():
     pygame.init()
-    pygame.key.set_repeat(500, 50)  # Enable key repeat: 500ms delay, 50ms interval
+    pygame.key.set_repeat(500, 50)
     screen = pygame.display.set_mode((1920, 1080))
     pygame.display.set_caption("Game Menu")
-    font = pygame.font.SysFont(None, 48)
     button_font = pygame.font.SysFont(None, 36)
     options = ["Singleplayer", "Multiplayer", "Quit to Desktop"]
     button_rects = [pygame.Rect(200, 200 + i * 80, 200, 50) for i in range(len(options))]
@@ -26,11 +27,14 @@ async def main_menu():
                 for i, rect in enumerate(button_rects):
                     if rect.collidepoint(mouse_pos):
                         if i == 0:
-                            print("Singleplayer mode (not implemented)")
+                            app = SingleplayerGame(screen)
+                            app.run()
+                            pygame.display.set_caption("Singleplayer")
+
                         elif i == 1:
                             await multiplayer_menu(screen)
 
-                            pygame.display.set_caption("Game Menu")
+                            pygame.display.set_caption("Multiplayer")
 
                         elif i == 2:
                             pygame.quit()
