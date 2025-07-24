@@ -11,3 +11,11 @@ Under ui:
   __init__.py     - Empty
   menu.py         -
   runner.py       -
+
+
+packagees
+
+pygame
+psutil
+requests
+numpy
