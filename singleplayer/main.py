@@ -1,5 +1,7 @@
 import pygame
 import sys
+import psutil
+import time
 from singleplayer.camera import Camera
 from singleplayer.map import Map
 from singleplayer.collision import Collision
@@ -7,21 +9,24 @@ from singleplayer.pause_menu import PauseMenu
 from singleplayer.player import Player
 from singleplayer.loading_status import LoadingStatus
 
+
 class SingleplayerGame:
     def __init__(self, screen):
         self.screen = screen
         self.tile_size = 100
-        self.map_width = 50000
-        self.map_height = 50000
+        self.map_width = 1_000_000
+        self.map_height = 1_000_000
         self.player_width = 30
         self.player_height = 50
         self.player_speed = 5
         self.positions = {"player": (self.map_width * self.tile_size // 2, self.map_height * self.tile_size // 2)}
 
-        self.map = Map(self.map_width, self.map_height, self.tile_size, self.positions["player"])
+        # Initialize Map with seed for procedural generation
+        self.map = Map(self.map_width, self.map_height, self.tile_size, self.positions["player"], seed=42)
         self.collision = Collision(self.map, self.player_width, self.player_height)
         self.camera = Camera(screen, self.map, self.player_width, self.player_height)
-        self.player = Player(self.positions["player"][0], self.positions["player"][1], self.player_width, self.player_height, self.player_speed)
+        self.player = Player(self.positions["player"][0], self.positions["player"][1], self.player_width,
+                            self.player_height, self.player_speed)
         self.pause_menu = PauseMenu(screen)
 
         self.clock = pygame.time.Clock()
@@ -35,15 +40,21 @@ class SingleplayerGame:
         self.loading_generators = []
         self.current_generator = None
         self.loading_progress = 0.0
-        self.loading_texts = ["Generating ground...", "Generating walls...", "Generating collision...", "Finalizing map..."]
+        self.loading_texts = ["Loading initial chunks...", "Generating collision...", "Finalizing map..."]
 
         self.start_loading()
+
+        # For app-specific RAM usage
+        self.process = psutil.Process()
+
+        # For FPS profiling (optional)
+        self.render_time = 0
+        self.update_time = 0
 
     def start_loading(self):
         self.loading_stage = 0
         self.loading_generators = [
-            self.map.load_step(),
-            self.map.load_step(),
+            self.map.load_step(),  # Loads initial chunks around player
             self._generate_collision(),
             self._finalize_map()
         ]
@@ -92,11 +103,11 @@ class SingleplayerGame:
         pygame.display.flip()
 
     def run(self):
-        self.accum_time = 0  # Initialize accumulator
-        FIXED_UPDATE_TIME = 1000 / 60  # Time step for 60 updates per second (in milliseconds)
+        self.accum_time = 0
+        FIXED_UPDATE_TIME = 1000 / 60  # 60 updates per second (in milliseconds)
 
         while self.running:
-            dt = self.clock.tick()  # Get time since last frame in milliseconds
+            dt = self.clock.tick()  # Time since last frame in milliseconds
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
@@ -118,16 +129,19 @@ class SingleplayerGame:
                 self.draw_loading()
                 continue
 
-            # Accumulate time and process movement updates at fixed intervals
+            # Update at fixed intervals
+            update_start = time.time()
             if not self.paused:
                 self.accum_time += dt
                 while self.accum_time >= FIXED_UPDATE_TIME:
                     keys = pygame.key.get_pressed()
                     self.player.move(keys, self.collision)
                     self.accum_time -= FIXED_UPDATE_TIME
+            self.update_time = time.time() - update_start
 
+            # Rendering
+            render_start = time.time()
             cx, cy = self.camera.get_offset(self.player.get_pos())
-
             self.screen.fill((30, 30, 30))
             tile_blits = []
             start_x = max(cx // self.tile_size, 0)
@@ -135,27 +149,38 @@ class SingleplayerGame:
             start_y = max(cy // self.tile_size, 0)
             end_y = min((cy + self.screen.get_height()) // self.tile_size + 1, self.map.height)
 
+            # Cache tile images for visible area
             for y in range(int(start_y), int(end_y)):
                 for x in range(int(start_x), int(end_x)):
-                    tile = self.map.map_data[y, x]
-                    img = self.map.get_tile_image(x, y, tile)
+                    img = self.map.get_tile_image(x, y)
                     sx, sy = x * self.tile_size - cx, y * self.tile_size - cy
                     tile_blits.append((img, (sx, sy)))
 
             self.screen.blits(tile_blits)
-
             self.player.draw(self.screen, (cx, cy))
 
             if self.paused:
                 self.pause_menu.draw()
 
+            # Display FPS, app-specific RAM, map size, and profiling (optional)
             fps_surf = self.font.render(f"FPS: {int(self.clock.get_fps())}", True, (255, 255, 0))
+            memory = self.process.memory_info().rss / (1024 ** 2)  # App RAM in MB
+            mem_surf = self.font.render(f"App RAM: {memory:.3f} MB", True, (255, 255, 0))
+            map_size_surf = self.font.render(f"Map: {self.map_width:,} x {self.map_height:,} tiles", True, (255, 255, 0))
+            # Optional profiling display
+            profile_surf = self.font.render(f"Update: {self.update_time*1000:.1f}ms Render: {self.render_time*1000:.1f}ms", True, (255, 255, 0))
             self.screen.blit(fps_surf, (5, 5))
+            self.screen.blit(mem_surf, (5, 35))
+            self.screen.blit(map_size_surf, (5, 65))
+            self.screen.blit(profile_surf, (5, 95))  # Remove after testing
+            self.render_time = time.time() - render_start
 
             pygame.display.flip()
+
+
 if __name__ == "__main__":
     pygame.init()
-    screen = pygame.display.set_mode((1920, 1080))  # Updated to match observed resolution
+    screen = pygame.display.set_mode((1920, 1080))
     game = SingleplayerGame(screen)
     game.run()
     pygame.quit()
