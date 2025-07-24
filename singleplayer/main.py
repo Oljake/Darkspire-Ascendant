@@ -11,7 +11,7 @@ class SingleplayerGame:
     def __init__(self, screen):
         self.screen = screen
         self.tile_size = 100
-        self.map_width = 50000  # Updated to large map size
+        self.map_width = 50000
         self.map_height = 50000
         self.player_width = 30
         self.player_height = 50
@@ -92,9 +92,11 @@ class SingleplayerGame:
         pygame.display.flip()
 
     def run(self):
-        speed = 5
+        self.accum_time = 0  # Initialize accumulator
+        FIXED_UPDATE_TIME = 1000 / 60  # Time step for 60 updates per second (in milliseconds)
+
         while self.running:
-            dt = self.clock.tick(60)
+            dt = self.clock.tick()  # Get time since last frame in milliseconds
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
@@ -106,15 +108,23 @@ class SingleplayerGame:
                         self.paused = False
                     elif action == "Quit to Menu":
                         self.running = False
+                    elif action == "Quit to Desktop":
+                        self.running = False
+                        pygame.quit()
+                        sys.exit()
 
             if self.loading:
                 self.generate_step()
                 self.draw_loading()
                 continue
 
-            keys = pygame.key.get_pressed()
+            # Accumulate time and process movement updates at fixed intervals
             if not self.paused:
-                self.player.move(keys, self.collision)
+                self.accum_time += dt
+                while self.accum_time >= FIXED_UPDATE_TIME:
+                    keys = pygame.key.get_pressed()
+                    self.player.move(keys, self.collision)
+                    self.accum_time -= FIXED_UPDATE_TIME
 
             cx, cy = self.camera.get_offset(self.player.get_pos())
 
@@ -143,10 +153,9 @@ class SingleplayerGame:
             self.screen.blit(fps_surf, (5, 5))
 
             pygame.display.flip()
-
 if __name__ == "__main__":
     pygame.init()
-    screen = pygame.display.set_mode((800, 600))
+    screen = pygame.display.set_mode((1920, 1080))  # Updated to match observed resolution
     game = SingleplayerGame(screen)
     game.run()
     pygame.quit()

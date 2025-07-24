@@ -3,7 +3,7 @@ import pygame
 class PauseMenu:
     def __init__(self, screen):
         self.screen = screen
-        self.options = ["Resume", "Quit to Menu"]
+        self.options = ["Resume", "Quit to Menu", "Quit to Desktop"]
         self.rects = [pygame.Rect(200, 200 + i * 60, 200, 40) for i in range(len(self.options))]
         self.font = pygame.font.SysFont(None, 36)
 
