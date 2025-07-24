@@ -1,3 +1,5 @@
+import time
+
 import pygame
 import asyncio
 import threading
@@ -68,7 +70,12 @@ class ClientApp:
     def toggle_ready(self):
         if not self.is_connecting:
             self.ready = not self.ready
-            asyncio.run_coroutine_threadsafe(self._send("/ready"), self.loop)
+            try:
+                future = asyncio.run_coroutine_threadsafe(self._send("/ready"), self.loop)
+                future.result()  # Block until the async operation completes
+            except Exception as e:
+                print(f"Error sending /ready: {e}")
+                self.ready = False  # Reset on failure
 
     def close(self):
         self.running = False
@@ -182,24 +189,35 @@ class ClientApp:
                     pass
             self.writer = None
 
+    # Draw lobby helper func
+    def _draw_button(self, rect, text, hovered, font, bg_hover, bg_idle, text_hover, text_idle):
+        bg = bg_hover if hovered else bg_idle
+        fg = text_hover if hovered else text_idle
+        pygame.draw.rect(self.screen, bg, rect, border_radius=10)
+        pygame.draw.rect(self.screen, (255, 255, 255), rect, 2, border_radius=10)
+        surf = font.render(text, True, fg)
+        text_rect = surf.get_rect(center=rect.center)
+        self.screen.blit(surf, text_rect)
+
     def draw_lobby(self):
         self.screen.fill((30, 30, 30))
         mouse_pos = pygame.mouse.get_pos()
 
         if self.is_connecting:
             connecting_surf = self.font.render("Joining server...", True, (255, 255, 255))
-            connecting_rect = connecting_surf.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
+            connecting_rect = connecting_surf.get_rect(
+                center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
             self.screen.blit(connecting_surf, connecting_rect)
 
             # Draw cancel button
-            is_cancel_hovered = self.cancel_rect.collidepoint(mouse_pos)
-            cancel_bg_color = (100, 0, 0) if is_cancel_hovered else (50, 50, 50)
-            cancel_text_color = (255, 255, 255) if is_cancel_hovered else (200, 200, 200)
-            pygame.draw.rect(self.screen, cancel_bg_color, self.cancel_rect, border_radius=10)
-            pygame.draw.rect(self.screen, (255, 255, 255), self.cancel_rect, 2, border_radius=10)
-            cancel_surf = self.button_font.render("Cancel", True, cancel_text_color)
-            cancel_text_rect = cancel_surf.get_rect(center=self.cancel_rect.center)
-            self.screen.blit(cancel_surf, cancel_text_rect)
+            self._draw_button(
+                self.cancel_rect, "Cancel",
+                self.cancel_rect.collidepoint(mouse_pos),
+                self.button_font,
+                (100, 0, 0), (50, 50, 50),
+                (255, 255, 255), (200, 200, 200)
+            )
+
 
         elif self.is_loading:
             # Display loading screen
@@ -234,25 +252,23 @@ class ClientApp:
             self.screen.blit(input_surf, input_text_rect)
 
             # Draw Ready/Unready button
-            is_ready_hovered = self.ready_rect.collidepoint(mouse_pos)
-            ready_bg_color = (0, 100, 0) if is_ready_hovered else (50, 50, 50)
-            ready_text_color = (255, 255, 255) if is_ready_hovered else (200, 200, 200)
-            pygame.draw.rect(self.screen, ready_bg_color, self.ready_rect, border_radius=10)
-            pygame.draw.rect(self.screen, (255, 255, 255), self.ready_rect, 2, border_radius=10)
-            ready_text = "Unready" if self.ready else "Ready"
-            ready_surf = self.button_font.render(ready_text, True, ready_text_color)
-            ready_text_rect = ready_surf.get_rect(center=self.ready_rect.center)
-            self.screen.blit(ready_surf, ready_text_rect)
+            self._draw_button(
+                self.ready_rect,
+                "Unready" if self.ready else "Ready",
+                self.ready_rect.collidepoint(mouse_pos),
+                self.button_font,
+                (0, 100, 0), (50, 50, 50),
+                (255, 255, 255), (200, 200, 200)
+            )
 
             # Draw Leave Lobby button
-            is_leave_hovered = self.leave_rect.collidepoint(mouse_pos)
-            leave_bg_color = (100, 0, 0) if is_leave_hovered else (50, 50, 50)
-            leave_text_color = (255, 255, 255) if is_leave_hovered else (200, 200, 200)
-            pygame.draw.rect(self.screen, leave_bg_color, self.leave_rect, border_radius=10)
-            pygame.draw.rect(self.screen, (255, 255, 255), self.leave_rect, 2, border_radius=10)
-            leave_surf = self.button_font.render("Leave Lobby", True, leave_text_color)
-            leave_text_rect = leave_surf.get_rect(center=self.leave_rect.center)
-            self.screen.blit(leave_surf, leave_text_rect)
+            self._draw_button(
+                self.leave_rect, "Leave Lobby",
+                self.leave_rect.collidepoint(mouse_pos),
+                self.button_font,
+                (100, 0, 0), (50, 50, 50),
+                (255, 255, 255), (200, 200, 200)
+            )
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -271,6 +287,8 @@ class ClientApp:
                     if self.ready_rect.collidepoint(mouse_pos):
                         self.toggle_ready()
                     elif self.leave_rect.collidepoint(mouse_pos):
+                        if self.ready:
+                            self.toggle_ready()  # Send /ready to set to False
                         self.close()
                         self.running = False
                     elif input_rect.collidepoint(mouse_pos):
@@ -310,8 +328,10 @@ class ClientApp:
 
     def get_camera_offset(self):
         px, py = self.positions.get(self.username, (750, 750))
-        cx = max(0, min(px - self.screen.get_width() // 2 + self.player_width // 2, self.map_width * self.tile_size - self.screen.get_width()))
-        cy = max(0, min(py - self.screen.get_height() // 2 + self.player_height // 2, self.map_height * self.tile_size - self.screen.get_height()))
+        cx = max(0, min(px - self.screen.get_width() // 2 + self.player_width // 2,
+                        self.map_width * self.tile_size - self.screen.get_width()))
+        cy = max(0, min(py - self.screen.get_height() // 2 + self.player_height // 2,
+                        self.map_height * self.tile_size - self.screen.get_height()))
         return cx, cy
 
     def run_game(self):
@@ -376,8 +396,7 @@ class ClientApp:
                     keys = pygame.key.get_pressed()
                     dx = (keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]) * speed
                     dy = (keys[pygame.K_DOWN] - keys[pygame.K_UP]) * speed
-                    if dx or dy:
-                        asyncio.run_coroutine_threadsafe(self._send(f"MOVE|{dx}|{dy}"), self.loop)
+                    asyncio.run_coroutine_threadsafe(self._send(f"MOVE|{dx}|{dy}"), self.loop)
                     self.accum_time -= 1000 / 60
 
             # Draw pause menu if paused (after game elements to preserve background)

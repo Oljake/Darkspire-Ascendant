@@ -94,9 +94,9 @@ class GameServer:
             await asyncio.sleep(1)
 
         await self.broadcast("SERVER: Starting")
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
         await self.broadcast("LOADING_GAME")
-        await asyncio.sleep(2)  # Simulate loading time
+        await asyncio.sleep(1)  # Simulate loading time
         self.game_started = True
         await self.broadcast("START_GAME")
         await self.broadcast_positions()
@@ -191,7 +191,9 @@ class GameServer:
         finally:
             if writer == self.host:
                 await self.broadcast("HOST_LEFT\n")
-                self.host = None
+                await self.shutdown()
+                return  # stop handling any more cleanup, shutdown clears it all
+
             if writer in self.clients:
                 self.clients.remove(writer)
             if writer in self.usernames:
