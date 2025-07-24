@@ -1,6 +1,7 @@
 import numpy as np
 import pygame
 import os
+import shutil
 from enum import IntEnum
 from singleplayer.loading_status import LoadingStatus
 import psutil
@@ -11,14 +12,17 @@ class Tile(IntEnum):
     WALL = 1
 
 class Map:
-    def __init__(self, width, height, tile_size, player_pos, seed=42, screen=None):
+    def __init__(self, width, height, tile_size, player_pos, seed=42, screen=None, mode="singleplayer"):
         self.width, self.height, self.tile_size = width, height, tile_size
         self.player_pos = player_pos
         self.seed = seed
         self.chunk_size = 128
         self.chunk_cache = {}  # (chunk_x, chunk_y) -> (tiles, indices)
         self.cache_limit = 8  # ~256 KB (8 × 32 KB)
-        self.chunk_dir = "chunks"
+        self.chunk_dir = "chunks_temp"  # Single temporary directory
+        # Clear and recreate chunk_dir at start
+        if os.path.exists(self.chunk_dir):
+            shutil.rmtree(self.chunk_dir)
         os.makedirs(self.chunk_dir, exist_ok=True)
 
         self.image_loader = TileImageLoader(tile_size, screen)
@@ -55,6 +59,7 @@ class Map:
             tiles = np.load(chunk_file)
             indices = np.load(indices_file)
         else:
+            print(f"Generating new chunk: {chunk_file}")
             tiles, indices = self._generate_chunk(chunk_x, chunk_y)
             np.save(chunk_file, tiles)
             np.save(indices_file, indices)
@@ -128,5 +133,19 @@ class Map:
         self.visible_tile_cache[(x, y)] = img
         return img
 
+    def precompute_visible_tiles(self, start_x, end_x, start_y, end_y):
+        tile_images = []
+        for y in range(int(start_y), int(end_y)):
+            for x in range(int(start_x), int(end_x)):
+                img = self.get_tile_image(x, y)
+                tile_images.append((img, (x * self.tile_size, y * self.tile_size)))
+        return tile_images
+
     def clear_visible_cache(self):
         self.visible_tile_cache.clear()
+
+    def cleanup(self):
+        """Delete temporary chunk directory."""
+        if os.path.exists(self.chunk_dir):
+            shutil.rmtree(self.chunk_dir)
+            print(f"Deleted temporary chunk directory: {self.chunk_dir}")
