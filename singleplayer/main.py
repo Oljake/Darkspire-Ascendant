@@ -175,11 +175,12 @@ class SingleplayerGame:
                 if self.paused:
                     self.pause_menu.draw()
 
-                fps_surf = self.font.render(f"FPS: {int(self.clock.get_fps())}", True, (255, 255, 0))
-                memory = self.process.memory_info().rss / (1024 ** 3)
-                mem_surf = self.font.render(f"App RAM: {memory:.3f} GB", True, (255, 255, 0))
-                map_size_surf = self.font.render(f"Map: {self.map_width:,} x {self.map_height:,} tiles", True, (255, 255, 0))
-                profile_surf = self.font.render(f"Update: {self.update_time*1000:.1f}ms Render: {self.render_time*1000:.1f}ms", True, (255, 255, 0))
+                fps_surf = self.font.render(f"FPS: {round(self.clock.get_fps())}", True, (255, 255, 0))
+                mb_memory = self.process.memory_info().rss / (1024 ** 2)
+                gb_memory = self.process.memory_info().rss / (1024 ** 3)
+                mem_surf = self.font.render(f"RAM: {gb_memory:.3f} GB /// {mb_memory:.3f} MB", True, (255, 255, 0))
+                map_size_surf = self.font.render(f"Map: {self.map_width:_} x {self.map_height:_}", True, (255, 255, 0))
+                profile_surf = self.font.render(f"Update: {self.update_time*1000:.1f}ms /// Render: {self.render_time*1000:.1f}ms", True, (255, 255, 0))
                 self.screen.blit(fps_surf, (5, 5))
                 self.screen.blit(mem_surf, (5, 35))
                 self.screen.blit(map_size_surf, (5, 65))
