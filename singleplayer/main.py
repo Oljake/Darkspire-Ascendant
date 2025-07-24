@@ -1,3 +1,5 @@
+import random
+
 import pygame
 import sys
 import psutil
@@ -21,7 +23,7 @@ class SingleplayerGame:
         self.player_speed = 5
         self.positions = {"player": (self.map_width * self.tile_size // 2, self.map_height * self.tile_size // 2)}
 
-        self.map = Map(self.map_width, self.map_height, self.tile_size, self.positions["player"], seed=42, screen=self.screen)
+        self.map = Map(self.map_width, self.map_height, self.tile_size, self.positions["player"], seed=random.randint(0, 100000), screen=self.screen, mode="singleplayer")
         self.collision = Collision(self.map, self.player_width, self.player_height)
         self.camera = Camera(screen, self.map, self.player_width, self.player_height)
         self.player = Player(self.positions["player"][0], self.positions["player"][1], self.player_width,
@@ -41,8 +43,8 @@ class SingleplayerGame:
         self.loading_texts = ["Loading initial chunks...", "Generating collision...", "Finalizing map..."]
 
         self.frame_buffer = None  # Cache for static map
-        self.last_camera_pos = None  # Track camera movement
-        self.last_player_pos = None  # Track player movement
+        self.last_camera_pos = None
+        self.last_player_pos = None
 
         self.start_loading()
 
@@ -107,89 +109,89 @@ class SingleplayerGame:
         self.accum_time = 0
         FIXED_UPDATE_TIME = 1000 / 60
 
-        while self.running:
-            dt = self.clock.tick()
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.running = False
-                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    self.paused = not self.paused
-                elif event.type == pygame.MOUSEBUTTONDOWN and self.paused:
-                    action = self.pause_menu.handle_click(event.pos)
-                    if action == "Resume":
-                        self.paused = False
-                    elif action == "Quit to Menu":
+        try:
+            while self.running:
+                dt = self.clock.tick()
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
                         self.running = False
-                    elif action == "Quit to Desktop":
-                        self.running = False
-                        pygame.quit()
-                        sys.exit()
+                    elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                        self.paused = not self.paused
+                    elif event.type == pygame.MOUSEBUTTONDOWN and self.paused:
+                        action = self.pause_menu.handle_click(event.pos)
+                        if action == "Resume":
+                            self.paused = False
+                        elif action == "Quit to Menu":
+                            self.running = False
+                        elif action == "Quit to Desktop":
+                            self.running = False
 
-            if self.loading:
-                self.generate_step()
-                continue
+                if self.loading:
+                    self.generate_step()
+                    continue
 
-            update_start = time.time()
-            if not self.paused:
-                self.accum_time += dt
-                while self.accum_time >= FIXED_UPDATE_TIME:
-                    keys = pygame.key.get_pressed()
-                    self.player.move(keys, self.collision)
-                    self.accum_time -= FIXED_UPDATE_TIME
-            self.update_time = time.time() - update_start
+                update_start = time.time()
+                if not self.paused:
+                    self.accum_time += dt
+                    while self.accum_time >= FIXED_UPDATE_TIME:
+                        keys = pygame.key.get_pressed()
+                        self.player.move(keys, self.collision)
+                        self.accum_time -= FIXED_UPDATE_TIME
+                self.update_time = time.time() - update_start
 
-            render_start = time.time()
-            current_camera_pos = self.camera.get_offset(self.player.get_pos())
-            current_player_pos = self.player.get_pos()
+                render_start = time.time()
+                current_camera_pos = self.camera.get_offset(self.player.get_pos())
+                current_player_pos = self.player.get_pos()
 
-            # Check if re-rendering is needed
-            needs_render = (
-                self.frame_buffer is None or
-                self.last_camera_pos != current_camera_pos or
-                self.last_player_pos != current_player_pos
-            )
+                needs_render = (
+                    self.frame_buffer is None or
+                    self.last_camera_pos != current_camera_pos or
+                    self.last_player_pos != current_player_pos
+                )
 
-            if needs_render:
-                self.map.clear_visible_cache()
-                self.screen.fill((30, 30, 30))
-                cx, cy = current_camera_pos
-                tile_blits = []
-                start_x = max(cx // self.tile_size, 0)
-                end_x = min((cx + self.screen.get_width()) // self.tile_size + 1, self.map.width)
-                start_y = max(cy // self.tile_size, 0)
-                end_y = min((cy + self.screen.get_height()) // self.tile_size + 1, self.map.height)
+                if needs_render:
+                    self.map.clear_visible_cache()
+                    self.screen.fill((30, 30, 30))
+                    cx, cy = current_camera_pos
+                    start_x = max(cx // self.tile_size, 0)
+                    end_x = min((cx + self.screen.get_width()) // self.tile_size + 1, self.map.width)
+                    start_y = max(cy // self.tile_size, 0)
+                    end_y = min((cy + self.screen.get_height()) // self.tile_size + 1, self.map.height)
 
-                for y in range(int(start_y), int(end_y)):
-                    for x in range(int(start_x), int(end_x)):
-                        img = self.map.get_tile_image(x, y)
-                        tile_blits.append((img, (x * self.tile_size - cx, y * self.tile_size - cy)))
+                    tile_blits = self.map.precompute_visible_tiles(start_x, end_x, start_y, end_y)
+                    adjusted_blits = [(img, (x - cx, y - cy)) for img, (x, y) in tile_blits]
 
-                self.frame_buffer = pygame.Surface((self.screen.get_width(), self.screen.get_height()))
-                self.frame_buffer.blit(self.screen, (0, 0))
-                self.screen.blits(tile_blits)
-                self.player.draw(self.screen, (cx, cy))
-                self.frame_buffer.blit(self.screen, (0, 0))  # Cache full frame
-                self.last_camera_pos = current_camera_pos
-                self.last_player_pos = current_player_pos
-            else:
-                self.screen.blit(self.frame_buffer, (0, 0))
-                self.player.draw(self.screen, current_camera_pos)
+                    self.frame_buffer = pygame.Surface((self.screen.get_width(), self.screen.get_height()))
+                    self.frame_buffer.blit(self.screen, (0, 0))
+                    self.screen.blits(adjusted_blits)
+                    self.player.draw(self.screen, (cx, cy))
+                    self.frame_buffer.blit(self.screen, (0, 0))
+                    self.last_camera_pos = current_camera_pos
+                    self.last_player_pos = current_player_pos
+                else:
+                    self.screen.blit(self.frame_buffer, (0, 0))
+                    self.player.draw(self.screen, current_camera_pos)
 
-            if self.paused:
-                self.pause_menu.draw()
+                if self.paused:
+                    self.pause_menu.draw()
 
-            fps_surf = self.font.render(f"FPS: {int(self.clock.get_fps())}", True, (255, 255, 0))
-            memory = self.process.memory_info().rss / (1024 ** 3)
-            mem_surf = self.font.render(f"App RAM: {memory:.3f} GB", True, (255, 255, 0))
-            map_size_surf = self.font.render(f"Map: {self.map_width:,} x {self.map_height:,} tiles", True, (255, 255, 0))
-            profile_surf = self.font.render(f"Update: {self.update_time*1000:.1f}ms Render: {self.render_time*1000:.1f}ms", True, (255, 255, 0))
-            self.screen.blit(fps_surf, (5, 5))
-            self.screen.blit(mem_surf, (5, 35))
-            self.screen.blit(map_size_surf, (5, 65))
-            self.screen.blit(profile_surf, (5, 95))
-            self.render_time = time.time() - render_start
+                fps_surf = self.font.render(f"FPS: {int(self.clock.get_fps())}", True, (255, 255, 0))
+                memory = self.process.memory_info().rss / (1024 ** 3)
+                mem_surf = self.font.render(f"App RAM: {memory:.3f} GB", True, (255, 255, 0))
+                map_size_surf = self.font.render(f"Map: {self.map_width:,} x {self.map_height:,} tiles", True, (255, 255, 0))
+                profile_surf = self.font.render(f"Update: {self.update_time*1000:.1f}ms Render: {self.render_time*1000:.1f}ms", True, (255, 255, 0))
+                self.screen.blit(fps_surf, (5, 5))
+                self.screen.blit(mem_surf, (5, 35))
+                self.screen.blit(map_size_surf, (5, 65))
+                self.screen.blit(profile_surf, (5, 95))
+                self.render_time = time.time() - render_start
 
-            pygame.display.flip()
+                pygame.display.flip()
+
+        finally:
+            self.map.cleanup()
+            pygame.quit()
+            sys.exit()
 
 
 if __name__ == "__main__":
@@ -197,5 +199,3 @@ if __name__ == "__main__":
     screen = pygame.display.set_mode((1920, 1080))
     game = SingleplayerGame(screen)
     game.run()
-    pygame.quit()
-    sys.exit()
