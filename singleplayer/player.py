@@ -1,11 +1,13 @@
 import pygame
 
+
 class Player:
-    def __init__(self, x, y, width, height, speed, image=None):
+    def __init__(self, x, y, width, height, speed, image_path="images/player/Thomas.png"):
         self.rect = pygame.Rect(x, y, width, height)
         self.speed = speed
-        self.image = image or pygame.Surface((width, height))
-        self.image.fill((0, 0, 255))  # fallback blue rect
+
+        raw_img = pygame.image.load(image_path).convert_alpha()
+        self.image = pygame.transform.scale(raw_img, (width, height))
 
     def move(self, keys, collision):
         dx = dy = 0
@@ -18,9 +20,9 @@ class Player:
         if keys[pygame.K_w] or keys[pygame.K_UP]:
             dy -= self.speed
 
-        if dx != 0 and not collision.check(self.rect.x + dx, self.rect.y):
+        if dx and not collision.check(self.rect.x + dx, self.rect.y):
             self.rect.x += dx
-        if dy != 0 and not collision.check(self.rect.x, self.rect.y + dy):
+        if dy and not collision.check(self.rect.x, self.rect.y + dy):
             self.rect.y += dy
 
     def get_pos(self):

@@ -1,151 +1,187 @@
-import numpy as np
 import pygame
-import os
-import shutil
-from enum import IntEnum
-from singleplayer.loading_status import LoadingStatus
+import numpy as np
+import threading
+import queue
 import psutil
-from ui.tile_image_loader import TileImageLoader
 
-class Tile(IntEnum):
-    GROUND = 0
-    WALL = 1
+
+class ImageLoader:
+    def __init__(self):
+        self.cache = {}
+
+    def load(self, path):
+        if path not in self.cache:
+            self.cache[path] = pygame.image.load(path).convert_alpha()
+        return self.cache[path]
+
+
+class TileSet:
+    def __init__(self, loader, map_data, tile_size, width, height):
+        self.map_data = map_data
+        self.width = width
+        self.height = height
+        self.tile_size = tile_size
+        self.tileset = loader.load('images/Tilesets/tileset.png')
+        self.water = loader.load('images/Water/Water_0.png')
+        self.ground = loader.load('images/Ground/Ground_19.png')
+
+        # Scale images to match game tile size
+        self.tileset = pygame.transform.scale(self.tileset, (
+            self.tileset.get_width() * tile_size // 32,
+            self.tileset.get_height() * tile_size // 32
+        ))
+        self.water = pygame.transform.scale(self.water, (tile_size, tile_size))
+        self.ground = pygame.transform.scale(self.ground, (tile_size, tile_size))
+
+        self.tileset_width, self.tileset_height = self.tileset.get_size()
+        self.max_col = self.tileset_width // tile_size - 1
+        self.max_row = self.tileset_height // tile_size - 1
+
+    def get_tile(self, col, row):
+        col = min(max(col, 0), self.max_col)
+        row = min(max(row, 0), self.max_row)
+        rect = pygame.Rect(col * self.tile_size, row * self.tile_size, self.tile_size, self.tile_size)
+        return self.tileset.subsurface(rect)
+
+    def check_water_sides(self, r, c):
+        get = lambda rr, cc: 1 if 0 <= rr < self.height and 0 <= cc < self.width and self.map_data[rr, cc] == 1 else 0
+        top = get(r - 1, c)
+        bottom = get(r + 1, c)
+        left = get(r, c - 1)
+        right = get(r, c + 1)
+        return top, bottom, left, right
+
+    def get_autotile(self, r, c):
+        t, b, l, r_ = self.check_water_sides(r, c)
+
+        if t and b and l and r_: return self.get_tile(6, 1)
+        if b and l and r_: return self.get_tile(3, 2)
+        if t and l and r_: return self.get_tile(3, 0)
+        if t and b and r_: return self.get_tile(6, 0)
+        if t and b and l: return self.get_tile(4, 0)
+        if b and r_: return self.get_tile(2, 2)
+        if b and l: return self.get_tile(0, 2)
+        if t and l: return self.get_tile(0, 0)
+        if t and r_: return self.get_tile(2, 0)
+        if l and r_: return self.get_tile(3, 1)
+        if t and b: return self.get_tile(5, 0)
+        if r_: return self.get_tile(2, 1)
+        if l: return self.get_tile(0, 1)
+        if b: return self.get_tile(1, 2)
+        if t: return self.get_tile(1, 0)
+
+        return self.ground
+
+    def get_tile_image(self, x, y, tile):
+        if tile == 1:
+            return self.water
+        else:
+            if any(n == 1 for n in self.check_water_sides(y, x)):
+                return self.get_autotile(y, x)
+            return self.ground
+
+
+class MapGenerator(threading.Thread):
+    def __init__(self, width, height, chunk_size, player_pos, progress_queue):
+        super().__init__()
+        self.width = width
+        self.height = height
+        self.chunk_size = chunk_size
+        self.player_pos = player_pos
+        self.progress_queue = progress_queue
+        self.map_data = np.zeros((self.height, self.width), dtype=np.uint8)
+        self._stop_event = threading.Event()
+
+    def stop(self):
+        self._stop_event.set()
+
+    def run(self):
+        try:
+            # Generate random map: 0 = ground, 1 = water
+            rng = np.random.default_rng()
+            wall_mask = rng.random((self.height, self.width)) < 0.3  # 30% chance of water
+            self.map_data = wall_mask.astype(np.uint8)
+
+            # Process in chunks for memory efficiency
+            total_chunks = (self.width // self.chunk_size + 1) * (self.height // self.chunk_size + 1)
+            processed_chunks = 0
+            update_interval = 16
+
+            for cy in range(0, self.height, self.chunk_size):
+                for cx in range(0, self.width, self.chunk_size):
+                    if self._stop_event.is_set():
+                        return
+                    chunk_y_end = min(cy + self.chunk_size, self.height)
+                    chunk_x_end = min(cx + self.chunk_size, self.width)
+                    processed_chunks += 1
+                    if processed_chunks % update_interval == 0 or processed_chunks == total_chunks:
+                        self.progress_queue.put(processed_chunks / total_chunks)
+
+            # Set map boundaries to water (1)
+            self.map_data[0, :] = 1
+            self.map_data[-1, :] = 1
+            self.map_data[:, 0] = 1
+            self.map_data[:, -1] = 1
+
+            # Clear area around player (set to ground, 0)
+            px, py = self.player_pos[0] // 100, self.player_pos[1] // 100
+            y_start, y_end = max(0, py - 1), min(self.height, py + 2)
+            x_start, x_end = max(0, px - 1), min(self.width, px + 2)
+            self.map_data[y_start:y_end, x_start:x_end] = 0
+
+            self.progress_queue.put(1.0)
+        except Exception as e:
+            self.progress_queue.put(("error", str(e)))
+
 
 class Map:
-    def __init__(self, width, height, tile_size, player_pos, seed=42, screen=None, mode="singleplayer"):
-        self.width, self.height, self.tile_size = width, height, tile_size
+    def __init__(self, width, height, tile_size, player_pos):
+        self.width = width
+        self.height = height
+        self.tile_size = tile_size
         self.player_pos = player_pos
-        self.seed = seed
-        self.chunk_size = 128
-        self.chunk_cache = {}  # (chunk_x, chunk_y) -> (tiles, indices)
-        self.cache_limit = 8  # ~256 KB (8 × 32 KB)
-        self.chunk_dir = "chunks_temp"  # Single temporary directory
-        # Clear and recreate chunk_dir at start
-        if os.path.exists(self.chunk_dir):
-            shutil.rmtree(self.chunk_dir)
-        os.makedirs(self.chunk_dir, exist_ok=True)
+        self.map_data = None
+        self.chunk_size = 256
+        self.progress_queue = queue.Queue()
+        self.generator = None
+        self.loader = ImageLoader()
+        self.tileset = None
 
-        self.image_loader = TileImageLoader(tile_size, screen)
-        self.ground_images = self.image_loader.load_series("Ground", "Ground_{}.png", 20)
-        self.wall_images = self.image_loader.load_series("Maze_wall", "Maze_wall_{}.png", 10)
+    def start_generation(self):
+        available_memory = psutil.virtual_memory().available / (1024 ** 3)
+        required_memory = (self.width * self.height * 1) / (1024 ** 3)
+        if available_memory < required_memory * 1.5:
+            raise MemoryError(
+                f"Insufficient memory: {required_memory:.2f} GB required, {available_memory:.2f} GB available"
+            )
 
-        self.visible_tile_cache = {}  # (x, y) -> image
-
-        self.loading_stage = 0
-        self.total_chunks = (width // self.chunk_size + (1 if width % self.chunk_size else 0)) * (
-            height // self.chunk_size + (1 if height % self.chunk_size else 0)
+        self.generator = MapGenerator(
+            self.width, self.height,
+            self.chunk_size, self.player_pos,
+            self.progress_queue
         )
+        self.generator.start()
 
-    def load_step(self):
-        if self.loading_stage == 0:
-            LoadingStatus.set_status("Loading initial chunks...")
-            px, py = self.player_pos[0] // self.tile_size, self.player_pos[1] // self.tile_size
-            cx, cy = px // self.chunk_size, py // self.chunk_size
-            for i, (dy, dx) in enumerate([(dy, dx) for dy in range(-1, 2) for dx in range(-1, 2)]):
-                self.get_chunk(cx + dx, cy + dy)
-                yield (i + 1) / 9
-            self.loading_stage += 1
-            yield 1.0
-        return False
+    def stop_generation(self):
+        if self.generator and self.generator.is_alive():
+            self.generator.stop()
+            self.generator.join()
 
-    def get_chunk(self, chunk_x, chunk_y):
-        chunk_key = (chunk_x, chunk_y)
-        if chunk_key in self.chunk_cache:
-            return self.chunk_cache[chunk_key]
+    def get_generation_progress(self):
+        try:
+            progress = self.progress_queue.get_nowait()
+            if isinstance(progress, tuple) and progress[0] == "error":
+                raise RuntimeError(progress[1])
+            if progress == 1.0:
+                self.map_data = self.generator.map_data
+                self.tileset = TileSet(self.loader, self.map_data, self.tile_size, self.width, self.height)
+                self.generator.join()
+                self.generator = None
+            return progress
+        except queue.Empty:
+            return 0.0 if self.map_data is None else 1.0
 
-        chunk_file = os.path.join(self.chunk_dir, f"chunk_{chunk_x}_{chunk_y}.npy")
-        indices_file = os.path.join(self.chunk_dir, f"chunk_indices_{chunk_x}_{chunk_y}.npy")
-        if os.path.exists(chunk_file) and os.path.exists(indices_file):
-            tiles = np.load(chunk_file)
-            indices = np.load(indices_file)
-        else:
-            print(f"Generating new chunk: {chunk_file}")
-            tiles, indices = self._generate_chunk(chunk_x, chunk_y)
-            np.save(chunk_file, tiles)
-            np.save(indices_file, indices)
-
-        self.chunk_cache[chunk_key] = (tiles, indices)
-
-        if len(self.chunk_cache) > self.cache_limit:
-            px, py = self.player_pos[0] // self.tile_size, self.player_pos[1] // self.tile_size
-            cx, cy = px // self.chunk_size, py // self.chunk_size
-            distances = [(k, (k[0] - cx) ** 2 + (k[1] - cy) ** 2) for k in self.chunk_cache]
-            farthest = max(distances, key=lambda x: x[1])[0]
-            del self.chunk_cache[farthest]
-
-        return tiles, indices
-
-    def _generate_chunk(self, chunk_x, chunk_y):
-        rng = np.random.default_rng(self.seed + chunk_x * 10000 + chunk_y)
-        tiles = np.zeros((self.chunk_size, self.chunk_size), dtype=np.uint8)
-        indices = np.zeros((self.chunk_size, self.chunk_size), dtype=np.uint8)
-        random_walls = rng.random((self.chunk_size, self.chunk_size)) < 0.2
-        tiles[random_walls] = Tile.WALL.value
-        indices[random_walls] = rng.integers(0, len(self.wall_images), size=(self.chunk_size, self.chunk_size))[random_walls]
-        indices[~random_walls] = rng.integers(0, len(self.ground_images), size=(self.chunk_size, self.chunk_size))[~random_walls]
-
-        if chunk_y == 0:
-            tiles[0, :] = Tile.WALL.value
-            indices[0, :] = rng.integers(0, len(self.wall_images), size=self.chunk_size)
-        if chunk_y == (self.height // self.chunk_size):
-            tiles[-1, :] = Tile.WALL.value
-            indices[-1, :] = rng.integers(0, len(self.wall_images), size=self.chunk_size)
-        if chunk_x == 0:
-            tiles[:, 0] = Tile.WALL.value
-            indices[:, 0] = rng.integers(0, len(self.wall_images), size=self.chunk_size)
-        if chunk_x == (self.width // self.chunk_size):
-            tiles[:, -1] = Tile.WALL.value
-            indices[:, -1] = rng.integers(0, len(self.wall_images), size=self.chunk_size)
-
-        px, py = self.player_pos[0] // self.tile_size, self.player_pos[1] // self.tile_size
-        px_chunk, py_chunk = px // self.chunk_size, py // self.chunk_size
-        if chunk_x == px_chunk and chunk_y == py_chunk:
-            local_px = px % self.chunk_size
-            local_py = py % self.chunk_size
-            y_start = max(0, local_py - 1)
-            y_end = min(self.chunk_size, local_py + 2)
-            x_start = max(0, local_px - 1)
-            x_end = min(self.chunk_size, local_px + 2)
-            tiles[y_start:y_end, x_start:x_end] = Tile.GROUND.value
-            indices[y_start:y_end, x_start:x_end] = rng.integers(0, len(self.ground_images), size=(y_end - y_start, x_end - x_start))
-
-        return tiles, indices
-
-    def get_tile(self, x, y):
-        if not (0 <= x < self.width and 0 <= y < self.height):
-            return Tile.WALL
-        chunk_x, chunk_y = x // self.chunk_size, y // self.chunk_size
-        local_x, local_y = x % self.chunk_size, y % self.chunk_size
-        tiles, _ = self.get_chunk(chunk_x, chunk_y)
-        return Tile(tiles[local_y, local_x])
-
-    def get_tile_image(self, x, y, tile=None):
-        if (x, y) in self.visible_tile_cache:
-            return self.visible_tile_cache[(x, y)]
-
-        if tile is None:
-            tile = self.get_tile(x, y)
-        chunk_x, chunk_y = x // self.chunk_size, y // self.chunk_size
-        local_x, local_y = x % self.chunk_size, y % self.chunk_size
-        _, indices = self.get_chunk(chunk_x, chunk_y)
-        idx = indices[local_y, local_x]
-        img = self.ground_images[idx] if tile == Tile.GROUND else self.wall_images[idx]
-        self.visible_tile_cache[(x, y)] = img
-        return img
-
-    def precompute_visible_tiles(self, start_x, end_x, start_y, end_y):
-        tile_images = []
-        for y in range(int(start_y), int(end_y)):
-            for x in range(int(start_x), int(end_x)):
-                img = self.get_tile_image(x, y)
-                tile_images.append((img, (x * self.tile_size, y * self.tile_size)))
-        return tile_images
-
-    def clear_visible_cache(self):
-        self.visible_tile_cache.clear()
-
-    def cleanup(self):
-        """Delete temporary chunk directory."""
-        if os.path.exists(self.chunk_dir):
-            shutil.rmtree(self.chunk_dir)
-            print(f"Deleted temporary chunk directory: {self.chunk_dir}")
+    def get_tile_image(self, x, y, tile):
+        if self.map_data is None or self.tileset is None:
+            return self.loader.load('images/Ground/Ground_19.png')  # Fallback to ground
+        return self.tileset.get_tile_image(x, y, tile)
