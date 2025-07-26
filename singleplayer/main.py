@@ -10,12 +10,13 @@ from singleplayer.loading_status import LoadingStatus
 class SingleplayerGame:
     def __init__(self, screen):
         self.screen = screen
-        self.tile_size = 100
-        self.map_width = 10000
-        self.map_height = 10000
+        self.tile_size = 128
+        self.map_width = 1000
+        self.map_height = 1000
         self.player_width = 40
         self.player_height = 50
-        self.player_speed = 10
+        self.player_speed = 20
+        self.noclip: bool = False
         self.positions = {"player": (self.map_width * self.tile_size // 2, self.map_height * self.tile_size // 2)}
 
         # Initialize systems
@@ -40,8 +41,6 @@ class SingleplayerGame:
         LoadingStatus.set_status("Generating world...")
 
     def run(self):
-        screen_tiles_x = (self.screen.get_width() // self.tile_size) + 2
-        screen_tiles_y = (self.screen.get_height() // self.tile_size) + 2
         last_progress = 0.0
 
         while self.running:
@@ -51,8 +50,11 @@ class SingleplayerGame:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    self.paused = not self.paused
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        self.paused = not self.paused
+                    elif event.key == pygame.K_LALT:
+                        self.noclip = not self.noclip
                 elif event.type == pygame.MOUSEBUTTONDOWN and self.paused:
                     action = self.pause_menu.handle_click(event.pos)
                     if action == "Resume":
@@ -84,7 +86,7 @@ class SingleplayerGame:
                 self.accum_time += dt
                 while self.accum_time >= self.fixed_dt:
                     keys = pygame.key.get_pressed()
-                    self.player.move(keys, self.collision)
+                    self.player.move(keys, self.collision, self.noclip)
                     self.accum_time -= self.fixed_dt
 
             # Render (unlimited FPS)

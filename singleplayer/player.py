@@ -9,7 +9,7 @@ class Player:
         raw_img = pygame.image.load(image_path).convert_alpha()
         self.image = pygame.transform.scale(raw_img, (width, height))
 
-    def move(self, keys, collision):
+    def move(self, keys, collision, noclip=False):
         dx = dy = 0
         if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
             dx += self.speed
@@ -20,9 +20,16 @@ class Player:
         if keys[pygame.K_w] or keys[pygame.K_UP]:
             dy -= self.speed
 
-        if dx and not collision.check(self.rect.x + dx, self.rect.y):
+        if not noclip:
+            if dx and not collision.check(self.rect.x + dx, self.rect.y):
+                self.rect.x += dx
+            if dy and not collision.check(self.rect.x, self.rect.y + dy):
+                self.rect.y += dy
+            return
+
+        if dx:
             self.rect.x += dx
-        if dy and not collision.check(self.rect.x, self.rect.y + dy):
+        if dy:
             self.rect.y += dy
 
     def get_pos(self):
