@@ -1,4 +1,4 @@
-# 🌑 Shadowspire: The Last Light
+# 🌑 Darkspire Ascendant
 
 > *Light fades. Survival demands sacrifice.*
 
