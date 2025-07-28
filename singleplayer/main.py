@@ -11,8 +11,8 @@ class SingleplayerGame:
     def __init__(self, screen):
         self.screen = screen
         self.tile_size = 128
-        self.map_width = 1000
-        self.map_height = 1000
+        self.map_width = 100
+        self.map_height = 100
         self.player_width = 40
         self.player_height = 50
         self.player_speed = 20

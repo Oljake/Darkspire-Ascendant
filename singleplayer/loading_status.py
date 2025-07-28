@@ -1,11 +1,10 @@
-# loading_status.py
 class LoadingStatus:
-    status = ""
+    _status = "Loading..."
 
     @classmethod
-    def set_status(cls, new_status: str):
-        cls.status = new_status
+    def set_status(cls, text):
+        cls._status = text
 
     @classmethod
-    def get_status(cls) -> str:
-        return cls.status
+    def get_status(cls):
+        return cls._status
