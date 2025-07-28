@@ -1,3 +1,4 @@
+from settings.resolution import resolutions, get_native_resolution, clamp_resolution, calculate_tile_size
 import pygame, asyncio, sys
 from network.server import get_local_ip, get_public_ip, is_port_open
 from network.async_utils import start_server
@@ -10,8 +11,23 @@ from singleplayer.main import SingleplayerGame
 async def main_menu():
     pygame.init()
     pygame.key.set_repeat(500, 50)
-    screen = pygame.display.set_mode((1920, 1080))
+
+    # Get native display resolution
+    native_res = get_native_resolution()
+
+    # Requested resolution (change as needed)
+    requested_res = resolutions["1080p"]
+
+    # Clamp requested resolution so it won't exceed native
+    final_res = clamp_resolution(requested_res, native_res)
+
+    # Set pygame display with the final clamped resolution
+    screen = pygame.display.set_mode(final_res, pygame.HWSURFACE | pygame.DOUBLEBUF)
     pygame.display.set_caption("Game Menu")
+
+    # Calculate tile size scaled to the resolution
+    tile_size = calculate_tile_size(final_res)
+
     button_font = pygame.font.SysFont(None, 36)
     options = ["Singleplayer", "Multiplayer", "Quit to Desktop"]
     button_rects = [pygame.Rect(200, 200 + i * 80, 200, 50) for i in range(len(options))]
@@ -27,14 +43,14 @@ async def main_menu():
                 for i, rect in enumerate(button_rects):
                     if rect.collidepoint(mouse_pos):
                         if i == 0:
-                            app = SingleplayerGame(screen)
+                            # Pass tile_size to the singleplayer game instance
+                            pygame.display.set_caption("Darkspire Ascendant")
+                            app = SingleplayerGame(screen, tile_size)
                             app.run()
-                            pygame.display.set_caption("Singleplayer")
 
                         elif i == 1:
                             await multiplayer_menu(screen)
-
-                            pygame.display.set_caption("Multiplayer")
+                            pygame.display.set_caption("Darkspire Ascendant")
 
                         elif i == 2:
                             pygame.quit()
@@ -54,6 +70,8 @@ async def main_menu():
         pygame.display.flip()
 
     pygame.quit()
+
+
 
 async def multiplayer_menu(screen):
     pygame.display.set_caption("Multiplayer Menu")
