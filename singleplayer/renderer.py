@@ -1,6 +1,7 @@
 import pygame
 import psutil
 import os
+from singleplayer.stats_ui import StatsUI
 
 
 class Renderer:
@@ -8,6 +9,7 @@ class Renderer:
         self.game = game
         self.font = pygame.font.SysFont(None, 36)
         self.process = psutil.Process(os.getpid())
+        self.stats_ui = StatsUI(pos=(10, 850), line_height=30)  # Initialize StatsUI
 
         # Cache and previous values
         self.cached_fps_surf = None
@@ -51,13 +53,12 @@ class Renderer:
                 py = tower.y * game.tile_size - cy - (3 * game.tile_size)  # 4-tile-tall tower
                 screen.blit(tower_img, (px, py))
 
-        game.player.draw(screen, (cx, cy))
+        game.player.draw(screen, (cx, cy), self.stats_ui)  # Pass stats_ui
 
         if game.paused:
             game.pause_menu.draw()
 
         self.draw_stats()
-
 
     def draw_stats(self):
         self.frame_counter += 1

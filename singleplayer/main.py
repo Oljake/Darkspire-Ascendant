@@ -66,11 +66,11 @@ class SingleplayerGame:
             self.player_height,
             self.player_stats
         )
-        self.ability_handler = AbilityHandler(self.player, self.collision)
-
         # Assign player class as 'mage' and create upgrade system
         self.player.player_class = "Knight"  # You might already have this inside Player
         self.player_card_system = PlayerCardSystem("mage", self.player, self.screen.get_size())  # mage archer knight
+        self.ability_handler = AbilityHandler(self.player, self.collision)
+
 
         self.pause_menu = PauseMenu(screen)
 
@@ -107,7 +107,7 @@ class SingleplayerGame:
                     current_time = pygame.time.get_ticks() / 1000  # ← seconds
 
                     if hasattr(self, "ability_handler"):
-                        self.ability_handler.handle_dash(keys, current_time)
+                        self.ability_handler.handle_abilities(keys, current_time)
 
                     self.player.move(keys, self.collision, self.noclip)
                     self.accum_time -= self.fixed_dt
