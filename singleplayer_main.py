@@ -33,7 +33,14 @@ def main():
     final_res = clamp_resolution(requested_res, native_res)
     print(f"[Init] Using resolution: {final_res}")
 
-    screen = pygame.display.set_mode(final_res)
+    vsync = True
+    print(f"[Init] Vsync: {vsync}")
+
+    if vsync:
+        screen = pygame.display.set_mode((final_res), pygame.SCALED | pygame.DOUBLEBUF, vsync=1)
+    else:
+        screen = pygame.display.set_mode(final_res)
+
     pygame.display.set_caption("Singleplayer Game")
 
     # Calculate tile size based on vertical scale of final resolution
