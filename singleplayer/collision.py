@@ -33,6 +33,6 @@ class Collision:
         # Check each tile in the player's area
         for y in range(top, bottom + 1):
             for x in range(left, right + 1):
-                if self.map.map_data[y, x] == 1:  # 1 represents a wall/collidable tile
+                if self.map.map_data[y, x] in [1, 10]:  # 1 Wall, 10 Tower
                     return True
         return False

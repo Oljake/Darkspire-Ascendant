@@ -31,6 +31,7 @@ class Renderer:
         start_y = max(cy // game.tile_size, 0)
         end_y = min((cy + screen.get_height()) // game.tile_size + 1, game.map.height)
 
+        # Update tile blits to include tower tiles
         tile_blits = [
             (game.map.get_tile_image(x, y, game.map.map_data[y, x]),
              (x * game.tile_size - cx, y * game.tile_size - cy))
@@ -39,6 +40,17 @@ class Renderer:
         ]
 
         screen.blits(tile_blits)
+
+        # Draw tower sprites (centered)
+        if game.map.tileset and game.map.tower_manager:
+            tower_img = game.map.tileset.tower
+            img_w, img_h = tower_img.get_size()
+
+            for tower in game.map.tower_manager.towers:
+                px = tower.x * game.tile_size - cx
+                py = tower.y * game.tile_size - cy - (3 * game.tile_size)  # 4-tile-tall tower
+                screen.blit(tower_img, (px, py))
+
         game.player.draw(screen, (cx, cy))
 
         if game.paused:
@@ -46,7 +58,6 @@ class Renderer:
 
         self.draw_stats()
 
-        pygame.display.flip()
 
     def draw_stats(self):
         self.frame_counter += 1

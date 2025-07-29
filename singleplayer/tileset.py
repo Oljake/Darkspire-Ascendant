@@ -14,8 +14,8 @@ class TileSet:
 
         # Load and scale images to match original behavior
         self.tileset = self.loader.load('images/Tilesets/tileset.png').convert()
-        self.water = self.loader.load('images/Water/Water_0.png', tile_size).convert()
-        self.ground = self.loader.load('images/Ground/Ground_19.png', tile_size).convert()
+        self.water = self.loader.load('images/Water/Water_0.png', (self.tile_size, self.tile_size)).convert()
+        self.tower = self.loader.load('images/Towers/Blue.png', (self.tile_size, 3 * self.tile_size)).convert_alpha()
 
         # Scale tileset to match original scaling
         self.tileset = pygame.transform.scale(
@@ -93,7 +93,7 @@ class TileSet:
         elif t:
             tile = self.get_tile(1, 0)
         else:
-            tile = self.ground
+            tile = self.get_tile(1, 1)
 
         self.autotile_cache[cache_key] = tile
         return tile
@@ -103,11 +103,16 @@ class TileSet:
         autotile_map = np.zeros((self.height, self.width), dtype=object)
         for y in range(self.height):
             for x in range(self.width):
-                autotile_map[y, x] = self.get_autotile(y, x)
+                if self.map_data[y, x] == 2:  # Handle tower
+                    autotile_map[y, x] = self.get_tile_image(x, y, self.map_data[y, x])
+                else:
+                    autotile_map[y, x] = self.get_autotile(y, x)
         return autotile_map
 
     def get_tile_image(self, x, y, tile):
-        """Return the tile image using precomputed autotiling."""
+        """Return the tile image using precomputed autotiling or specific tile types."""
         if tile == 1:
             return self.water
+        elif tile == 2:
+            return self.ground  # Tower will be drawn manually
         return self.autotile_map[y, x]

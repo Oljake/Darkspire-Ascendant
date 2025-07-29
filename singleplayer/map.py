@@ -6,6 +6,7 @@ import psutil
 from singleplayer.loading_status import LoadingStatus
 from singleplayer.tileset import TileSet
 from singleplayer.image import ImageLoader
+from singleplayer.towers import TowerManager
 
 
 class MapGenerator(threading.Thread):
@@ -57,7 +58,12 @@ class MapGenerator(threading.Thread):
             x_start, x_end = max(0, px - 1), min(self.width, px + 2)
             self.map_data[y_start:y_end, x_start:x_end] = 0
 
+            # Place towers after terrain and player area are set
+            self.tower_manager = TowerManager(self.map_data, num_towers=5)
+            self.tower_manager.place_towers(self.width, self.height)
+
             self.progress_queue.put(1.0)
+
         except Exception as e:
             self.progress_queue.put(("error", str(e)))
 
@@ -74,6 +80,7 @@ class Map:
         self.generator = None
         self.loader = ImageLoader()
         self.tileset = None
+        self.tower_manager = None
 
     def start_generation(self):
         """Start map generation with memory check."""
@@ -106,6 +113,7 @@ class Map:
                 self.map_data = self.generator.map_data
                 LoadingStatus.set_status("Precomputing tiles...")
                 self.tileset = TileSet(self.map_data, self.tile_size, self.width, self.height)
+                self.tower_manager = self.generator.tower_manager
                 self.stop_generation()
             return progress
         except queue.Empty:
