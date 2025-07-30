@@ -1,5 +1,5 @@
 firemage_abilities = [
-    # Offensive Abilities
+    # Offensive (1x 1-star, 2x 2-star, 2x 3-star)
     {
         "name": "Fireball",
         "type": "Offense",
@@ -10,7 +10,8 @@ firemage_abilities = [
         "crit_multiplier": 1.5,
         "damage_amp": 0.2,
         "scaling_stat": "intelligence",
-        "stackable": False
+        "stackable": False,
+        "stars": 1
     },
     {
         "name": "Flame Wave",
@@ -23,7 +24,8 @@ firemage_abilities = [
         "damage_amp": 0.25,
         "scaling_stat": "intelligence",
         "aoe_radius": 5,
-        "stackable": False
+        "stackable": False,
+        "stars": 2
     },
     {
         "name": "Ignite",
@@ -37,7 +39,8 @@ firemage_abilities = [
         "crit_multiplier": 1.4,
         "damage_amp": 0.2,
         "scaling_stat": "intelligence",
-        "stackable": True
+        "stackable": True,
+        "stars": 2
     },
     {
         "name": "Greater Fireball",
@@ -49,7 +52,8 @@ firemage_abilities = [
         "crit_multiplier": 1.8,
         "damage_amp": 0.35,
         "scaling_stat": "intelligence",
-        "stackable": False
+        "stackable": False,
+        "stars": 3
     },
     {
         "name": "Meteor Strike",
@@ -62,10 +66,11 @@ firemage_abilities = [
         "damage_amp": 0.4,
         "scaling_stat": "intelligence",
         "aoe_radius": 7,
-        "stackable": False
+        "stackable": False,
+        "stars": 3
     },
 
-    # Defensive Abilities
+    # Defensive (3 total)
     {
         "name": "Flame Shield",
         "type": "Defense",
@@ -94,7 +99,7 @@ firemage_abilities = [
         "stackable": False
     },
 
-    # Support Abilities
+    # Support (3 total)
     {
         "name": "Ember's Blessing",
         "type": "Support",
